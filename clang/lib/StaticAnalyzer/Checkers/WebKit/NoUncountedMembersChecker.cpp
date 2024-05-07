@@ -35,7 +35,7 @@ private:
 public:
   NoUncountedMemberChecker()
       : Bug(this,
-            "Member variable is a raw-poiner/reference to reference-countable "
+            "Member variable is a raw-pointer/reference to reference-countable "
             "type",
             "WebKit coding guidelines") {}
 
