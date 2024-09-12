@@ -38,10 +38,17 @@ hasPublicMethodInBase(const CXXBaseSpecifier *Base, const char *NameToMatch);
 
 /// \returns true if \p Class is ref-countable, false if not, std::nullopt if
 /// inconclusive.
-std::optional<bool> isRefCountable(const clang::CXXRecordDecl* Class);
+std::optional<bool> isRefCountable(const clang::CXXRecordDecl *Class);
+
+/// \returns true if \p Class is checked-pointer compatible, false if not,
+/// std::nullopt if inconclusive.
+std::optional<bool> isCheckedPtrCapable(const clang::CXXRecordDecl *Class);
 
 /// \returns true if \p Class is ref-counted, false if not.
 bool isRefCounted(const clang::CXXRecordDecl *Class);
+
+/// \returns true if \p Class is a CheckedPtr / CheckedRef, false if not.
+bool isCheckedPtr(const clang::CXXRecordDecl *Class);
 
 /// \returns true if \p Class is ref-countable AND not ref-counted, false if
 /// not, std::nullopt if inconclusive.
