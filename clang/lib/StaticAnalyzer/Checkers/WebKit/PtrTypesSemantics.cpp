@@ -136,7 +136,12 @@ bool isCtorOfRefCounted(const clang::FunctionDecl *F) {
          || FunctionName == "Identifier";
 }
 
-bool isReturnValueRefCounted(const clang::FunctionDecl *F) {
+bool isCtorOfCheckedPtr(const clang::FunctionDecl *F) {
+  assert(F);
+  return isCheckedPtr(safeGetName(F));
+}
+
+bool isReturnValueSafePtr(const clang::FunctionDecl *F) {
   assert(F);
   QualType type = F->getReturnType();
   while (!type.isNull()) {
@@ -147,7 +152,7 @@ bool isReturnValueRefCounted(const clang::FunctionDecl *F) {
     if (auto *specialT = type->getAs<TemplateSpecializationType>()) {
       if (auto *decl = specialT->getTemplateName().getAsTemplateDecl()) {
         auto name = decl->getNameAsString();
-        return isRefType(name);
+        return isRefType(name) || isCheckedPtr(name);
       }
       return false;
     }
@@ -179,6 +184,12 @@ std::optional<bool> isUncounted(const CXXRecordDecl* Class)
   return (*IsRefCountable);
 }
 
+std::optional<bool> isUnchecked(const CXXRecordDecl *Class) {
+  if (isCheckedPtr(Class))
+    return false; // Cheaper than below
+  return isCheckedPtrCapable(Class);
+}
+
 std::optional<bool> isUncountedPtr(const Type* T)
 {
   assert(T);
@@ -191,7 +202,18 @@ std::optional<bool> isUncountedPtr(const Type* T)
   return false;
 }
 
-std::optional<bool> isGetterOfRefCounted(const CXXMethodDecl* M)
+std::optional<bool> isUnsafePtr(const Type *T) {
+  assert(T);
+
+  if (T->isPointerType() || T->isReferenceType()) {
+    if (auto *CXXRD = T->getPointeeCXXRecordDecl()) {
+      return isUncounted(CXXRD) || isUnchecked(CXXRD);
+    }
+  }
+  return false;
+}
+
+std::optional<bool> isGetterOfSafePtr(const CXXMethodDecl* M)
 {
   assert(M);
 
@@ -207,13 +229,25 @@ std::optional<bool> isGetterOfRefCounted(const CXXMethodDecl* M)
          method == "impl"))
       return true;
 
+    if (isCheckedPtr(className) && (method == "get" || method == "ptr"))
+      return true;
+
     // Ref<T> -> T conversion
     // FIXME: Currently allowing any Ref<T> -> whatever cast.
     if (isRefType(className)) {
       if (auto *maybeRefToRawOperator = dyn_cast<CXXConversionDecl>(M)) {
         if (auto *targetConversionType =
                 maybeRefToRawOperator->getConversionType().getTypePtrOrNull()) {
-          return isUncountedPtr(targetConversionType);
+          return isUnsafePtr(targetConversionType);
+        }
+      }
+    }
+
+    if (isCheckedPtr(className)) {
+      if (auto *maybeRefToRawOperator = dyn_cast<CXXConversionDecl>(M)) {
+        if (auto *targetConversionType =
+                maybeRefToRawOperator->getConversionType().getTypePtrOrNull()) {
+          return isUnsafePtr(targetConversionType);
         }
       }
     }
@@ -466,8 +500,8 @@ public:
     if (!Callee)
       return false;
 
-    std::optional<bool> IsGetterOfRefCounted = isGetterOfRefCounted(Callee);
-    if (IsGetterOfRefCounted && *IsGetterOfRefCounted)
+    std::optional<bool> IsGetterOfSafePtr = isGetterOfSafePtr(Callee);
+    if (IsGetterOfSafePtr && *IsGetterOfSafePtr)
       return true;
 
     // Recursively descend into the callee to confirm that it's trivial as well.
