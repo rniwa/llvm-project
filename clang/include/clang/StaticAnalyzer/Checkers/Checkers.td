@@ -1779,6 +1779,10 @@ def UncountedCallArgsChecker : Checker<"UncountedCallArgsChecker">,
   HelpText<"Check uncounted call arguments.">,
   Documentation<HasDocumentation>;
 
+def UncheckedCallArgsChecker : Checker<"UncheckedCallArgsChecker">,
+  HelpText<"Check unchecked call arguments.">,
+  Documentation<NotDocumented>;
+
 def UncountedLocalVarsChecker : Checker<"UncountedLocalVarsChecker">,
   HelpText<"Check uncounted local variables.">,
   Documentation<HasDocumentation>;
