@@ -62,6 +62,10 @@ std::optional<bool> isUncounted(const clang::CXXRecordDecl* Class);
 /// class, false if not, std::nullopt if inconclusive.
 std::optional<bool> isUncountedPtr(const clang::Type* T);
 
+/// \returns true if \p T is either a raw pointer or reference to an unchecked
+/// class, false if not, std::nullopt if inconclusive.
+std::optional<bool> isUncheckedPtr(const clang::Type* T);
+
 /// \returns true if Name is a RefPtr, Ref, or its variant, false if not.
 bool isRefType(const std::string &Name);
 

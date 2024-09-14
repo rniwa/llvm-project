@@ -202,6 +202,18 @@ std::optional<bool> isUncountedPtr(const Type* T)
   return false;
 }
 
+std::optional<bool> isUncheckedPtr(const Type* T)
+{
+  assert(T);
+
+  if (T->isPointerType() || T->isReferenceType()) {
+    if (auto *CXXRD = T->getPointeeCXXRecordDecl()) {
+      return isUnchecked(CXXRD);
+    }
+  }
+  return false;
+}
+
 std::optional<bool> isUnsafePtr(const Type *T) {
   assert(T);
 
