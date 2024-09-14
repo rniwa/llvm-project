@@ -16,6 +16,10 @@
 
 namespace clang {
 
+bool isSafePtr(clang::CXXRecordDecl *Decl) {
+  return isRefCounted(Decl) || isCheckedPtr(Decl);
+}
+
 bool tryToFindPtrOrigin(
     const Expr *E, bool StopAtFirstRefCountedObj,
     std::function<bool(const clang::Expr *, bool)> callback) {
@@ -30,7 +34,7 @@ bool tryToFindPtrOrigin(
     }
     if (auto *tempExpr = dyn_cast<CXXTemporaryObjectExpr>(E)) {
       if (auto *C = tempExpr->getConstructor()) {
-        if (auto *Class = C->getParent(); Class && isRefCounted(Class))
+        if (auto *Class = C->getParent(); Class && isSafePtr(Class))
           return callback(E, true);
         break;
       }
@@ -49,7 +53,8 @@ bool tryToFindPtrOrigin(
       if (StopAtFirstRefCountedObj) {
         if (auto *ConversionFunc =
                 dyn_cast_or_null<FunctionDecl>(cast->getConversionFunction())) {
-          if (isCtorOfRefCounted(ConversionFunc))
+          if (isCtorOfRefCounted(ConversionFunc) ||
+              isCtorOfCheckedPtr(ConversionFunc))
             return callback(E, true);
         }
       }
@@ -61,7 +66,7 @@ bool tryToFindPtrOrigin(
     if (auto *call = dyn_cast<CallExpr>(E)) {
       if (auto *memberCall = dyn_cast<CXXMemberCallExpr>(call)) {
         if (auto *decl = memberCall->getMethodDecl()) {
-          std::optional<bool> IsGetterOfRefCt = isGetterOfRefCounted(decl);
+          std::optional<bool> IsGetterOfRefCt = isGetterOfSafePtr(decl);
           if (IsGetterOfRefCt && *IsGetterOfRefCt) {
             E = memberCall->getImplicitObjectArgument();
             if (StopAtFirstRefCountedObj) {
@@ -80,7 +85,7 @@ bool tryToFindPtrOrigin(
       }
 
       if (auto *callee = call->getDirectCallee()) {
-        if (isCtorOfRefCounted(callee)) {
+        if (isCtorOfRefCounted(callee) || isCtorOfCheckedPtr(callee)) {
           if (StopAtFirstRefCountedObj)
             return callback(E, true);
 
@@ -88,7 +93,7 @@ bool tryToFindPtrOrigin(
           continue;
         }
 
-        if (isReturnValueRefCounted(callee))
+        if (isReturnValueSafePtr(callee))
           return callback(E, true);
 
         if (isSingleton(callee))

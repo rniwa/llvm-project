@@ -69,11 +69,17 @@ bool isRefType(const std::string &Name);
 /// false if not.
 bool isCtorOfRefCounted(const clang::FunctionDecl *F);
 
-/// \returns true if \p F returns a ref-counted object, false if not.
-bool isReturnValueRefCounted(const clang::FunctionDecl *F);
+/// \returns true if \p F creates checked ptr/ref from unchecked parameter,
+/// false if not.
+bool isCtorOfCheckedPtr(const clang::FunctionDecl *F);
 
-/// \returns true if \p M is getter of a ref-counted class, false if not.
-std::optional<bool> isGetterOfRefCounted(const clang::CXXMethodDecl* Method);
+/// \returns true if \p F returns a RefPtr, Ref, CheckedPtr, or CheckedRef,
+/// false if not.
+bool isReturnValueSafePtr(const clang::FunctionDecl *F);
+
+/// \returns true if \p M is getter of a RefPtr, Ref, CheckedPtr, or CheckedRef,
+/// false if not.
+std::optional<bool> isGetterOfSafePtr(const clang::CXXMethodDecl* Method);
 
 /// \returns true if \p F is a conversion between ref-countable or ref-counted
 /// pointer types.
