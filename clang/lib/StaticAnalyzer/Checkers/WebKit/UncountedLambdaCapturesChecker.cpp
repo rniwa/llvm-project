@@ -6,6 +6,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "ASTUtils.h"
 #include "DiagOutputUtils.h"
 #include "PtrTypesSemantics.h"
 #include "clang/AST/CXXInheritance.h"
@@ -14,6 +15,7 @@
 #include "clang/StaticAnalyzer/Core/BugReporter/BugReporter.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
+#include "llvm/ADT/DenseSet.h"
 #include <optional>
 
 using namespace clang;
@@ -36,7 +38,15 @@ public:
     // visit template instantiations or lambda classes. We
     // want to visit those, so we make our own RecursiveASTVisitor.
     struct LocalVisitor : public RecursiveASTVisitor<LocalVisitor> {
+      using Base = RecursiveASTVisitor<LocalVisitor>;
+
       const UncountedLambdaCapturesChecker *Checker;
+      llvm::DenseSet<const LambdaExpr *> SafeLambdas;
+      llvm::DenseSet<const DeclRefExpr *> SafeDeclRefs;
+      llvm::DenseSet<const LambdaExpr *> LambdasWithoutGuardians;
+      TrivialFunctionAnalysis TFA;
+      bool InFunctionCall = false;
+
       explicit LocalVisitor(const UncountedLambdaCapturesChecker *Checker)
           : Checker(Checker) {
         assert(Checker);
@@ -45,9 +55,134 @@ public:
       bool shouldVisitTemplateInstantiations() const { return true; }
       bool shouldVisitImplicitCode() const { return false; }
 
-      bool VisitLambdaExpr(LambdaExpr *L) {
-        Checker->visitLambdaExpr(L);
+      bool TraverseVarDecl(VarDecl *V) {
+        if (auto *Init = V->getInit()) {
+          if (auto *Lambda = dyn_cast<LambdaExpr>(Init)) {
+            bool CapturedVariablesHaveGuardians = true;
+            for (const LambdaCapture &C : Lambda->captures()) {
+              if (C.capturesVariable()) {
+                if (ValueDecl *CapturedVar = C.getCapturedVar()) {
+                  if (auto *VD = dyn_cast<VarDecl>(CapturedVar)) {
+                    if (auto *CapturedVarInit = VD->getInit()) {
+                      if (hasGuardianVariable(V, CapturedVarInit)) {
+                        continue;
+                      }
+                    }
+                  }
+                }
+              }
+              CapturedVariablesHaveGuardians = false;
+            }
+            if (!CapturedVariablesHaveGuardians)
+              LambdasWithoutGuardians.insert(Lambda);
+            return true;
+          }
+        }
+        return Base::TraverseVarDecl(V);
+      }
+
+      // FIXME: Handle assignment operator.
+
+      bool VisitCallExpr(const CallExpr *CE) {
+        for (auto C : CE->children()) {
+          auto *E = dyn_cast<Expr>(C);
+          if (!E)
+            continue;
+          E = E->IgnoreParenCasts();
+          auto *Lambda = dyn_cast<LambdaExpr>(E);
+          if (!Lambda)
+            continue;
+          auto *LambdaClass = Lambda->getLambdaClass();
+          for (auto Method : LambdaClass->methods()) {
+            // Calls a temporary lambda created within.
+            if (Method == CE->getCalleeDecl()) {
+              SafeLambdas.insert(Lambda);
+              return true;
+            }
+          }
+        }
+        CheckEscapeLambdaArguments(CE);
         return true;
+      }
+
+      void CheckEscapeLambdaArguments(const CallExpr *CE)
+      {
+        const FunctionType::ExtParameterInfo *ExtParams = nullptr;
+        unsigned ExtParamsCount = 0;
+        if (auto *CalleeDecl = CE->getDirectCallee()) {
+          if (auto *ProtoType = GetFunctionProtoType(CalleeDecl)) {
+            ExtParams = ProtoType->getExtParameterInfosOrNull();
+            ExtParamsCount = ExtParams ? ProtoType->getNumParams() : 0;
+          }
+        }
+        for (unsigned i = 0, NumArgs = CE->getNumArgs(); i < NumArgs; ++i) {
+          auto *Arg = CE->getArg(i);
+          Arg = Arg->IgnoreParenCasts();
+          if (auto *ConstructExpr = dyn_cast<CXXConstructExpr>(Arg)) {
+            if (IsWTFFunction(ConstructExpr->getConstructor()) &&
+                ConstructExpr->getNumArgs() > 0) {
+              if (auto *ConstructArg = ConstructExpr->getArg(0)) {
+                ConstructArg = ConstructArg->IgnoreParenCasts();
+                if (auto *Ref = dyn_cast<DeclRefExpr>(ConstructArg)) {
+                  if (auto *Lambda = GetLambdaExprFromInit(Ref)) {
+                    if (i < ExtParamsCount && ExtParams[i].isNoEscape()) {
+                      if (!LambdasWithoutGuardians.contains(Lambda))
+                        continue;
+                    }
+                    Checker->visitLambdaExpr(Lambda);
+                  }
+                }
+              }
+            }
+          } else if (auto *Ref = dyn_cast<DeclRefExpr>(Arg)) {
+            if (auto *Lambda = GetLambdaExprFromInit(Ref)) {
+              if (auto *CalleeDecl = CE->getDirectCallee()) {
+                if (!LambdasWithoutGuardians.contains(Lambda) &&
+                    TFA.isTrivial(CalleeDecl))
+                  continue;
+              }
+              Checker->visitLambdaExpr(Lambda);
+            }
+          } else if (auto *Lambda = dyn_cast<LambdaExpr>(Arg)) {
+            if (auto *CalleeDecl = CE->getDirectCallee()) {
+              if (!LambdasWithoutGuardians.contains(Lambda) &&
+                   TFA.isTrivial(CalleeDecl)) {
+                continue;
+              }
+            }
+            Checker->visitLambdaExpr(Lambda);
+          }
+        }
+      }
+
+      const LambdaExpr *GetLambdaExprFromInit(const DeclRefExpr *Ref) {
+        auto *Decl = Ref->getDecl();
+        if (!Decl)
+          return nullptr;
+        auto *Var = dyn_cast<VarDecl>(Decl);
+        if (!Var)
+          return nullptr;
+        auto *Init = Var->getInit();
+        if (!Init)
+          return nullptr;
+        return dyn_cast<LambdaExpr>(Init);
+      }
+
+      const FunctionProtoType *GetFunctionProtoType(const FunctionDecl *FD) {
+        auto *Type = FD->getFunctionType();
+        if (!Type)
+          return nullptr;
+        return dyn_cast<FunctionProtoType>(Type);
+      }
+
+      bool IsWTFFunction(const CXXMethodDecl *Decl) {
+        if (!Decl)
+          return false;
+        auto *Cls = Decl->getParent();
+        if (!Cls || safeGetName(Cls) != "Function")
+          return false;
+        auto *Ns = Cls->getParent();
+        return Ns && safeGetName(Ns) == "WTF";
       }
     };
 
@@ -55,7 +190,7 @@ public:
     visitor.TraverseDecl(const_cast<TranslationUnitDecl *>(TUD));
   }
 
-  void visitLambdaExpr(LambdaExpr *L) const {
+  void visitLambdaExpr(const LambdaExpr *L) const {
     for (const LambdaCapture &C : L->captures()) {
       if (C.capturesVariable()) {
         ValueDecl *CapturedVar = C.getCapturedVar();

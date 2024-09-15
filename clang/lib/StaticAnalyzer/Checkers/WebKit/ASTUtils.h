@@ -56,6 +56,11 @@ bool tryToFindPtrOrigin(
     const clang::Expr *E, bool StopAtFirstRefCountedObj,
     std::function<bool(const clang::Expr *, bool)> callback);
 
+/// Returns true if a variable declaration V initialized or assigned to by \p E
+/// has a "guardian" variable in the form of RefPtr/Ref/CheckedPtr/CheckedRef
+/// in an outer scope.
+bool hasGuardianVariable(const VarDecl *V, const Expr *E);
+
 /// For \p E referring to a ref-countable/-counted pointer/reference we return
 /// whether it's a safe call argument. Examples: function parameter or
 /// this-pointer. The logic relies on the set of recursive rules we enforce for
