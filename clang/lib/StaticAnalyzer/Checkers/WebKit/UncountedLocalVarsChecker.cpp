@@ -122,6 +122,7 @@ public:
     // want to visit those, so we make our own RecursiveASTVisitor.
     struct LocalVisitor : public RecursiveASTVisitor<LocalVisitor> {
       const UncountedLocalVarsChecker *Checker;
+      Decl *DeclWithIssue{nullptr};
 
       TrivialFunctionAnalysis TFA;
 
@@ -135,10 +136,17 @@ public:
       bool shouldVisitTemplateInstantiations() const { return true; }
       bool shouldVisitImplicitCode() const { return false; }
 
+      bool TraverseDecl(Decl *D) {
+        llvm::SaveAndRestore SavedDecl(DeclWithIssue);
+        if (D && (isa<FunctionDecl>(D) || isa<ObjCMethodDecl>(D)))
+          DeclWithIssue = D;
+        return Base::TraverseDecl(D);
+      }
+
       bool VisitVarDecl(VarDecl *V) {
         auto *Init = V->getInit();
         if (Init && V->isLocalVarDecl())
-          Checker->visitVarDecl(V, Init);
+          Checker->visitVarDecl(V, Init, DeclWithIssue);
         return true;
       }
 
@@ -146,7 +154,7 @@ public:
         if (BO->isAssignmentOp()) {
           if (auto *VarRef = dyn_cast<DeclRefExpr>(BO->getLHS())) {
             if (auto *V = dyn_cast<VarDecl>(VarRef->getDecl()))
-              Checker->visitVarDecl(V, BO->getRHS());
+              Checker->visitVarDecl(V, BO->getRHS(), DeclWithIssue);
           }
         }
         return true;
@@ -187,7 +195,8 @@ public:
     visitor.TraverseDecl(const_cast<TranslationUnitDecl *>(TUD));
   }
 
-  void visitVarDecl(const VarDecl *V, const Expr *Value) const {
+  void visitVarDecl(const VarDecl *V, const Expr *Value,
+                    const Decl *DeclWithIssue) const {
     if (shouldSkipVarDecl(V))
       return;
 
@@ -241,7 +250,7 @@ public:
               }))
         return;
 
-      reportBug(V, Value);
+      reportBug(V, Value, DeclWithIssue);
     }
   }
 
@@ -250,7 +259,8 @@ public:
     return BR->getSourceManager().isInSystemHeader(V->getLocation());
   }
 
-  void reportBug(const VarDecl *V, const Expr *Value) const {
+  void reportBug(const VarDecl *V, const Expr *Value,
+                 const Decl *DeclWithIssue) const {
     assert(V);
     SmallString<100> Buf;
     llvm::raw_svector_ostream Os(Buf);
@@ -279,6 +289,7 @@ public:
       PathDiagnosticLocation BSLoc(V->getLocation(), BR->getSourceManager());
       auto Report = std::make_unique<BasicBugReport>(Bug, Os.str(), BSLoc);
       Report->addRange(V->getSourceRange());
+      Report->setDeclWithIssue(DeclWithIssue);
       BR->emitReport(std::move(Report));
     }
   }
