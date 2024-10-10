@@ -102,6 +102,11 @@ bool tryToFindPtrOrigin(
         if (isSingleton(callee))
           return callback(E, true);
 
+        if (callee->isInStdNamespace() && safeGetName(callee) == "forward") {
+          E = call->getArg(0);
+          continue;
+        }
+
         if (isPtrConversion(callee)) {
           E = call->getArg(0);
           continue;
