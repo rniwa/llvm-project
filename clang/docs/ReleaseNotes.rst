@@ -1128,6 +1128,10 @@ AST Matchers
 
 - Add ``arrayInitIndexExpr`` and ``arrayInitLoopExpr`` matchers.
 
+- Ensure ``hasType`` and ``hasDeclaration`` match Objective-C interface declarations.
+
+- Ensure ``pointee`` matches Objective-C pointer types.
+
 clang-format
 ------------
 
