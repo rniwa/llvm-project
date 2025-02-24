@@ -41,6 +41,8 @@ public:
 
   virtual std::optional<bool> isUnsafeType(QualType) const = 0;
   virtual std::optional<bool> isUnsafePtr(QualType) const = 0;
+  virtual bool isSafePtr(const CXXRecordDecl *Record) const = 0;
+  virtual bool isSafePtrType(const QualType type) const = 0;
   virtual const char *ptrKind() const = 0;
 
   void checkASTDecl(const TranslationUnitDecl *TUD, AnalysisManager &MGR,
@@ -143,25 +145,28 @@ public:
   }
 
   bool isPtrOriginSafe(const Expr *Arg) const {
-    return tryToFindPtrOrigin(Arg, /*StopAtFirstRefCountedObj=*/true,
-                              [&](const clang::Expr *ArgOrigin, bool IsSafe) {
-                                if (IsSafe)
-                                  return true;
-                                if (isa<CXXNullPtrLiteralExpr>(ArgOrigin)) {
-                                  // foo(nullptr)
-                                  return true;
-                                }
-                                if (isa<IntegerLiteral>(ArgOrigin)) {
-                                  // FIXME: Check the value.
-                                  // foo(NULL)
-                                  return true;
-                                }
-                                if (isASafeCallArg(ArgOrigin))
-                                  return true;
-                                if (EFA.isACallToEnsureFn(ArgOrigin))
-                                  return true;
-                                return false;
-                              });
+    return tryToFindPtrOrigin(
+        Arg, /*StopAtFirstRefCountedObj=*/true,
+        [&](const clang::CXXRecordDecl *Record) { return isSafePtr(Record); },
+        [&](const clang::QualType T) { return isSafePtrType(T); },
+        [&](const clang::Expr *ArgOrigin, bool IsSafe) {
+          if (IsSafe)
+            return true;
+          if (isa<CXXNullPtrLiteralExpr>(ArgOrigin)) {
+            // foo(nullptr)
+            return true;
+          }
+          if (isa<IntegerLiteral>(ArgOrigin)) {
+            // FIXME: Check the value.
+            // foo(NULL)
+            return true;
+          }
+          if (isASafeCallArg(ArgOrigin))
+            return true;
+          if (EFA.isACallToEnsureFn(ArgOrigin))
+            return true;
+          return false;
+        });
   }
 
   bool shouldSkipCall(const CallExpr *CE) const {
@@ -318,6 +323,14 @@ public:
     return isUncountedPtr(QT);
   }
 
+  bool isSafePtr(const CXXRecordDecl *Record) const final {
+    return isRefCounted(Record) || isCheckedPtr(Record);
+  }
+
+  bool isSafePtrType(const QualType type) const final {
+    return isRefOrCheckedPtrType(type);
+  }
+
   const char *ptrKind() const final { return "uncounted"; }
 };
 
@@ -333,6 +346,14 @@ public:
 
   std::optional<bool> isUnsafePtr(QualType QT) const final {
     return isUncheckedPtr(QT);
+  }
+
+  bool isSafePtr(const CXXRecordDecl *Record) const final {
+    return isRefCounted(Record) || isCheckedPtr(Record);
+  }
+
+  bool isSafePtrType(const QualType type) const final {
+    return isRefOrCheckedPtrType(type);
   }
 
   const char *ptrKind() const final { return "unchecked"; }
