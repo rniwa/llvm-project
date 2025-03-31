@@ -134,6 +134,8 @@ public:
 
   void visitIvarDecl(const ObjCContainerDecl *CD,
                      const ObjCIvarDecl *Ivar) const {
+    if (BR->getSourceManager().isInSystemHeader(Ivar->getLocation()))
+      return;
     auto QT = Ivar->getType();
     const Type *IvarType = QT.getTypePtrOrNull();
     if (!IvarType)
@@ -155,6 +157,8 @@ public:
 
   void visitObjCPropertyDecl(const ObjCContainerDecl *CD,
                              const ObjCPropertyDecl *PD) const {
+    if (BR->getSourceManager().isInSystemHeader(PD->getLocation()))
+      return;
     auto QT = PD->getType();
     const Type *PropType = QT.getTypePtrOrNull();
     if (!PropType)
