@@ -72,7 +72,7 @@ public:
       bool shouldVisitImplicitCode() const { return false; }
 
       bool TraverseClassTemplateDecl(ClassTemplateDecl *Decl) {
-        if (isRefType(safeGetName(Decl)))
+        if (isSmartPtrClass(safeGetName(Decl)))
           return true;
         return Base::TraverseClassTemplateDecl(Decl);
       }
