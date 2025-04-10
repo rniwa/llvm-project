@@ -267,6 +267,12 @@ public:
           return Base::TraverseCompoundStmt(CS);
         return true;
       }
+
+      bool TraverseClassTemplateDecl(ClassTemplateDecl *Decl) {
+        if (isSmartPtrClass(safeGetName(Decl)))
+          return true;
+        return Base::TraverseClassTemplateDecl(Decl);
+      }
     };
 
     LocalVisitor visitor(this);
