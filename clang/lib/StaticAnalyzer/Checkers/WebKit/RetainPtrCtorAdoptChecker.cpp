@@ -71,7 +71,7 @@ public:
       }
 
       bool TraverseClassTemplateDecl(ClassTemplateDecl *CTD) {
-        if (safeGetName(CTD) == "RetainPtr")
+        if (isRetainPtr(safeGetName(CTD)))
           return true; // Skip the contents of RetainPtr.
         return Base::TraverseClassTemplateDecl(CTD);
       }
@@ -191,7 +191,7 @@ public:
     if (!Cls)
       return;
 
-    if (safeGetName(Cls) != "RetainPtr" || !CE->getNumArgs())
+    if (!isRetainPtr(safeGetName(Cls)) || !CE->getNumArgs())
       return;
 
     // Ignore RetainPtr construction inside adoptNS, adoptCF, and retainPtr.
@@ -320,12 +320,12 @@ public:
           if (auto *CD = dyn_cast<CXXConversionDecl>(MD)) {
             auto QT = CD->getConversionType().getCanonicalType();
             auto *ResultType = QT.getTypePtrOrNull();
-            if (safeGetName(Cls) == "RetainPtr" && ResultType &&
+            if (isRetainPtr(safeGetName(Cls)) && ResultType &&
                 (ResultType->isPointerType() || ResultType->isReferenceType() ||
                  ResultType->isObjCObjectPointerType()))
               return IsOwnedResult::NotOwned;
           }
-          if (safeGetName(MD) == "leakRef" && safeGetName(Cls) == "RetainPtr")
+          if (safeGetName(MD) == "leakRef" && isRetainPtr(safeGetName(Cls)))
             return IsOwnedResult::Owned;
         }
       }

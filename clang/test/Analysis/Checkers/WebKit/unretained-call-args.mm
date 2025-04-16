@@ -8,6 +8,9 @@ void consume_obj(SomeObj*);
 CFMutableArrayRef provide_cf();
 void consume_cf(CFMutableArrayRef);
 
+CGImageRef provideImage();
+NSString *stringForImage(CGImageRef);
+
 void some_function();
 
 namespace simple {
@@ -439,4 +442,12 @@ void idcf(CFTypeRef obj) {
     [[self getSomeObj] doWork];
 }
 
+- (CGImageRef)createImage {
+  return provideImage();
+}
+
+- (NSString *)convertImage {
+  RetainPtr<CGImageRef> image = [self createImage];
+  return stringForImage(image.get());
+}
 @end
