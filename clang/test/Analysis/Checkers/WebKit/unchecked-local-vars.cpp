@@ -31,6 +31,53 @@ void foo_ref_trivial() {
 void bar_ref(CheckedObj &) {}
 } // namespace reference
 
+namespace ref_to_checkedptr {
+CheckedPtr<CheckedObj>& provide_ref_to_checkedptr();
+CheckedPtr<CheckedObj>* provide_ptr_to_checkedptr();
+CheckedRef<CheckedObj>& provide_ref_to_checkedref();
+CheckedRef<CheckedObj>* provide_ptr_to_checkedref();
+
+void ref_to_checkedptr() {
+  CheckedPtr<CheckedObj>& foo = provide_ref_to_checkedptr();
+  // expected-warning@-1{{Local variable 'foo' is unchecked and unsafe [alpha.webkit.UncheckedLocalVarsChecker]}}
+  someFunction();
+  foo->method();
+}
+
+void ref_to_checkedptr_with_local_copy() {
+  CheckedPtr foo = provide_ref_to_checkedptr(); // no-warning
+  someFunction();
+  foo->method();
+}
+
+void ptr_to_checkedptr() {
+  auto* foo = provide_ptr_to_checkedptr();
+  // expected-warning@-1{{Local variable 'foo' is unchecked and unsafe [alpha.webkit.UncheckedLocalVarsChecker]}}
+  someFunction();
+  foo->get()->method();
+}
+
+void ref_to_checkedref() {
+  auto& foo = provide_ref_to_checkedref();
+  // expected-warning@-1{{Local variable 'foo' is unchecked and unsafe [alpha.webkit.UncheckedLocalVarsChecker]}}
+  someFunction();
+  foo->method();
+}
+
+void ref_to_checkedref_with_local_copy() {
+  auto foo = provide_ref_to_checkedref();
+  someFunction();
+  foo->method();
+}
+
+void ptr_to_checkedref() {
+  auto* foo = provide_ptr_to_checkedref();
+  // expected-warning@-1{{Local variable 'foo' is unchecked and unsafe [alpha.webkit.UncheckedLocalVarsChecker]}}
+  someFunction();
+  foo->get().method();
+}
+} // ref_to_checkedptr
+
 namespace guardian_scopes {
 void foo1() {
   CheckedPtr<CheckedObj> foo;

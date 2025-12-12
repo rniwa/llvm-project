@@ -20,6 +20,8 @@ namespace members {
     RefCountable& c = silenceWarningAboutInit;
 // expected-warning@-1{{Member variable 'c' in 'members::Foo' is a reference to ref-countable type 'RefCountable'}}
     Ref<RefCountable> d;
+    Ref<RefCountable>* e;
+// expected-warning@-1{{Member variable 'e' in 'members::Foo' is a raw pointer to ref-countable type 'Ref<RefCountable>'}}
   };
 
   template<class T>
@@ -96,6 +98,7 @@ namespace ptr_to_ptr_to_ref_counted {
 
   struct SafeList {
     RefPtr<RefCountable>* elements;
+    // expected-warning@-1{{Member variable 'elements' in 'ptr_to_ptr_to_ref_counted::SafeList' is a raw pointer to ref-countable type 'RefPtr<RefCountable>'}}
   };
 
 } // namespace ptr_to_ptr_to_ref_counted

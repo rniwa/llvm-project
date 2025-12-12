@@ -199,10 +199,20 @@ static bool isPtrOfType(const clang::QualType T, Predicate Pred) {
     } else if (auto *DTS = type->getAs<DeducedTemplateSpecializationType>()) {
       auto *Decl = DTS->getTemplateName().getAsTemplateDecl();
       return Decl && Pred(Decl->getNameAsString());
-    } else
-      break;
+    }
+    if (auto *RD = type->getAsRecordDecl())
+      return Pred(RD->getNameAsString());
+    break;
   }
   return false;
+}
+
+bool isRefPtrType(const clang::QualType T) {
+  return isPtrOfType(T, [](auto Name) { return isRefType(Name); });
+}
+
+bool isCheckedPtrType(const clang::QualType T) {
+  return isPtrOfType(T, [](auto Name) { return isCheckedPtr(Name); });
 }
 
 bool isRefOrCheckedPtrType(const clang::QualType T) {
@@ -273,6 +283,8 @@ bool RetainTypeChecker::isUnretained(const QualType QT, bool ignoreARC) {
     return true;
   auto CanonicalType = QT.getCanonicalType();
   auto PointeeType = CanonicalType->getPointeeType();
+  if (isRetainPtrOrOSPtrType(PointeeType))
+    return true;
   auto *RT = dyn_cast_or_null<RecordType>(PointeeType.getTypePtrOrNull());
   if (!RT) {
     auto *Type = QT.getTypePtrOrNull();
@@ -340,6 +352,8 @@ std::optional<bool> isUnchecked(const CXXRecordDecl *Class) {
 
 std::optional<bool> isUncountedPtr(const QualType T) {
   if (T->isPointerType() || T->isReferenceType()) {
+    if (isRefPtrType(T->getPointeeType()))
+      return true;
     if (auto *CXXRD = T->getPointeeCXXRecordDecl())
       return isUncounted(CXXRD);
   }
@@ -348,6 +362,8 @@ std::optional<bool> isUncountedPtr(const QualType T) {
 
 std::optional<bool> isUncheckedPtr(const QualType T) {
   if (T->isPointerType() || T->isReferenceType()) {
+    if (isCheckedPtrType(T->getPointeeType()))
+      return true;
     if (auto *CXXRD = T->getPointeeCXXRecordDecl())
       return isUnchecked(CXXRD);
   }

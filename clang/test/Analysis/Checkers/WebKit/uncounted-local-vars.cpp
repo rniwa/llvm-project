@@ -31,6 +31,53 @@ void foo_ref_trivial() {
 void bar_ref(RefCountable &) {}
 } // namespace reference
 
+namespace ref_to_refptr {
+RefPtr<RefCountable>& provide_ref_to_refptr();
+RefPtr<RefCountable>* provide_ptr_to_refptr();
+Ref<RefCountable>& provide_ref_to_ref();
+Ref<RefCountable>* provide_ptr_to_ref();
+
+void ref_to_refptr() {
+  RefPtr<RefCountable>& foo = provide_ref_to_refptr();
+  // expected-warning@-1{{Local variable 'foo' is uncounted and unsafe [alpha.webkit.UncountedLocalVarsChecker]}}
+  someFunction();
+  foo->method();
+}
+
+void ref_to_refptr_with_local_copy() {
+  RefPtr foo = provide_ref_to_refptr(); // no-warning
+  someFunction();
+  foo->method();
+}
+
+void ptr_to_refptr() {
+  auto* foo = provide_ptr_to_refptr();
+  // expected-warning@-1{{Local variable 'foo' is uncounted and unsafe [alpha.webkit.UncountedLocalVarsChecker]}}
+  someFunction();
+  foo->get()->method();
+}
+
+void ref_to_ref() {
+  auto& foo = provide_ref_to_ref();
+  // expected-warning@-1{{Local variable 'foo' is uncounted and unsafe [alpha.webkit.UncountedLocalVarsChecker]}}
+  someFunction();
+  foo->method();
+}
+
+void ref_to_ref_with_local_copy() {
+  auto foo = provide_ref_to_ref();
+  someFunction();
+  foo->method();
+}
+
+void ptr_to_ref() {
+  auto* foo = provide_ptr_to_ref();
+  // expected-warning@-1{{Local variable 'foo' is uncounted and unsafe [alpha.webkit.UncountedLocalVarsChecker]}}
+  someFunction();
+  foo->get().method();
+}
+} // namespace
+
 namespace guardian_scopes {
 void foo1() {
   RefPtr<RefCountable> foo;

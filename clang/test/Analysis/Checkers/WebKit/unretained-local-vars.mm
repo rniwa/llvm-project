@@ -43,6 +43,39 @@ void os_ptr() {
 
 } // namespace pointer
 
+namespace ref_to_retainptr {
+RetainPtr<SomeObj>& provide_ref_to_objc_retainptr();
+RetainPtr<SomeObj>* provide_ptr_to_objc_retainptr();
+RetainPtr<CFMutableArrayRef>& provide_ref_to_cf_retainptr();
+RetainPtr<CFMutableArrayRef>* provide_ptr_to_cf_retainptr();
+
+void ref_to_checkedptr() {
+  RetainPtr<SomeObj>& foo = provide_ref_to_objc_retainptr();
+  // expected-warning@-1{{Local variable 'foo' is unretained and unsafe [alpha.webkit.UnretainedLocalVarsChecker]}}
+  [foo doWork];
+  RetainPtr<CFMutableArrayRef>& bar = provide_ref_to_cf_retainptr();
+  // expected-warning@-1{{Local variable 'bar' is unretained and unsafe [alpha.webkit.UnretainedLocalVarsChecker]}}
+  CFArrayAppendValue(bar, nullptr);
+}
+
+void ref_to_checkedptr_with_local_copy() {
+  RetainPtr foo = provide_ref_to_objc_retainptr(); // no-warning
+  [foo doWork];
+  auto bar = provide_ref_to_cf_retainptr(); // no-warning
+  CFArrayAppendValue(bar, nullptr);
+}
+
+void ptr_to_checkedptr() {
+  auto* foo = provide_ptr_to_objc_retainptr();
+  // expected-warning@-1{{Local variable 'foo' is unretained and unsafe [alpha.webkit.UnretainedLocalVarsChecker]}}
+  [foo->get() doWork];
+  auto* bar = provide_ptr_to_cf_retainptr();
+  // expected-warning@-1{{Local variable 'bar' is unretained and unsafe [alpha.webkit.UnretainedLocalVarsChecker]}}
+  CFArrayAppendValue(bar->get(), nullptr);
+}
+
+} // ref_to_retainptr
+
 namespace guardian_scopes {
 SomeObj *provide();
 void foo1() {
