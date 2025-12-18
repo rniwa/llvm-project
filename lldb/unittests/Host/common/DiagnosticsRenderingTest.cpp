@@ -1,4 +1,4 @@
-#include "lldb/Utility/DiagnosticsRendering.h"
+#include "lldb/Host/common/DiagnosticsRendering.h"
 #include "lldb/Utility/StreamString.h"
 #include "gtest/gtest.h"
 
@@ -10,7 +10,7 @@ class ErrorDisplayTest : public ::testing::Test {};
 
 std::string Render(std::vector<DiagnosticDetail> details) {
   StreamString stream;
-  RenderDiagnosticDetails(stream, 0, true, details);
+  RenderDiagnosticDetails(stream, 0, true, details, /*force_ascii=*/true);
   return stream.GetData();
 }
 } // namespace
