@@ -658,7 +658,6 @@ void ProcessWindows::OnExitProcess(uint32_t exit_code) {
   }
 
   TargetSP target = CalculateTarget();
-  target->GetProcessLaunchInfo().GetPTY().Close();
   if (target) {
     ModuleSP executable_module = target->GetExecutableModule();
     ModuleList unloaded_modules;
