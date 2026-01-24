@@ -118,6 +118,6 @@ protected:
   std::condition_variable m_cv{};
   std::atomic<bool> m_stopping = false;
 };
-}; // namespace lldb_private
+} // namespace lldb_private
 
 #endif // LIBLLDB_HOST_WINDOWS_PSEUDOCONSOLE_H_
