@@ -93,8 +93,7 @@ ProcessLauncherWindows::LaunchProcess(const ProcessLaunchInfo &launch_info,
   startupinfoex.StartupInfo.dwFlags |= STARTF_USESTDHANDLES;
 
   HPCON hPC = launch_info.GetPTY().GetPseudoTerminalHandle();
-  bool use_pty =
-      hPC != INVALID_HANDLE_VALUE && launch_info.GetNumFileActions() == 0;
+  bool use_pty = launch_info.ShouldUsePTY();
 
   HANDLE stdin_handle = GetStdioHandle(launch_info, STDIN_FILENO);
   HANDLE stdout_handle = GetStdioHandle(launch_info, STDOUT_FILENO);
