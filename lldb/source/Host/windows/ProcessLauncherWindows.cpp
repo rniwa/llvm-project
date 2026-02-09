@@ -83,6 +83,38 @@ GetFlattenedWindowsCommandStringW(Args args) {
   return llvm::sys::flattenWindowsCommandLine(args_ref);
 }
 
+llvm::ErrorOr<ProcThreadAttributeList>
+ProcThreadAttributeList::Create(STARTUPINFOEXW &startupinfoex) {
+  SIZE_T attributelist_size = 0;
+  InitializeProcThreadAttributeList(/*lpAttributeList=*/nullptr,
+                                    /*dwAttributeCount=*/1, /*dwFlags=*/0,
+                                    &attributelist_size);
+
+  startupinfoex.lpAttributeList =
+      static_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(malloc(attributelist_size));
+
+  if (!startupinfoex.lpAttributeList)
+    return llvm::mapWindowsError(ERROR_OUTOFMEMORY);
+
+  if (!InitializeProcThreadAttributeList(startupinfoex.lpAttributeList,
+                                         /*dwAttributeCount=*/1,
+                                         /*dwFlags=*/0, &attributelist_size)) {
+    free(startupinfoex.lpAttributeList);
+    return llvm::mapWindowsError(GetLastError());
+  }
+
+  return ProcThreadAttributeList(startupinfoex.lpAttributeList);
+}
+
+llvm::Error ProcThreadAttributeList::SetupPseudoConsole(HPCON hPC) {
+  BOOL ok = UpdateProcThreadAttribute(lpAttributeList, 0,
+                                      PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, hPC,
+                                      sizeof(hPC), NULL, NULL);
+  if (!ok)
+    return llvm::errorCodeToError(llvm::mapWindowsError(GetLastError()));
+  return llvm::Error::success();
+}
+
 HostProcess
 ProcessLauncherWindows::LaunchProcess(const ProcessLaunchInfo &launch_info,
                                       Status &error) {
@@ -122,15 +154,15 @@ ProcessLauncherWindows::LaunchProcess(const ProcessLaunchInfo &launch_info,
     error = Status(::GetLastError(), eErrorTypeWin32);
     return HostProcess();
   }
-  auto delete_attributelist = llvm::make_scope_exit(
+  ProcThreadAttributeList attributelist = std::move(*attributelist_or_err);
+
+  llvm::scope_exit delete_attributelist(
       [&] { DeleteProcThreadAttributeList(startupinfoex.lpAttributeList); });
 
   std::vector<HANDLE> inherited_handles;
   if (use_pty) {
-    if (!UpdateProcThreadAttribute(startupinfoex.lpAttributeList, 0,
-                                   PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE, hPC,
-                                   sizeof(hPC), NULL, NULL)) {
-      error = Status(::GetLastError(), eErrorTypeWin32);
+    if (auto err = attributelist.SetupPseudoConsole(hPC)) {
+      error = Status::FromError(std::move(err));
       return HostProcess();
     }
   } else {
