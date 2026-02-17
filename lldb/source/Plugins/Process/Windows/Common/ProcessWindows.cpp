@@ -214,6 +214,11 @@ Status ProcessWindows::DoLaunch(Module *exe_module,
   error = LaunchProcess(launch_info, delegate);
   if (error.Success())
     SetID(launch_info.GetProcessID());
+  m_pty = launch_info.TakePTY();
+  // At this point, Process owns the ConPTY. If ProcessLaunchInfo still has a
+  // reference to it, it might get closed prematurely if another target is
+  // created.
+  assert(m_pty.use_count() == 1 && "More than one reference to the ConPTY");
   return error;
 }
 
@@ -1067,10 +1072,11 @@ private:
   };
 };
 
-void ProcessWindows::SetPseudoConsoleHandle(
-    const std::shared_ptr<PseudoConsole> &pty) {
+void ProcessWindows::SetPseudoConsoleHandle() {
+  if (m_pty == nullptr)
+    return;
   m_stdio_communication.SetConnection(
-      std::make_unique<ConnectionGenericFile>(pty->GetSTDOUTHandle(), false));
+      std::make_unique<ConnectionGenericFile>(m_pty->GetSTDOUTHandle(), false));
   if (m_stdio_communication.IsConnected()) {
     m_stdio_communication.SetReadThreadBytesReceivedCallback(
         STDIOReadThreadBytesReceived, this);
@@ -1081,7 +1087,7 @@ void ProcessWindows::SetPseudoConsoleHandle(
       std::lock_guard<std::mutex> guard(m_process_input_reader_mutex);
       if (!m_process_input_reader)
         m_process_input_reader = std::make_shared<IOHandlerProcessSTDIOWindows>(
-            this, pty->GetSTDINHandle());
+            this, m_pty->GetSTDINHandle());
     }
   }
 }

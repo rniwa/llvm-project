@@ -69,6 +69,10 @@ llvm::Error PseudoConsole::OpenPseudoConsole() {
   if (!kernel32.IsConPTYAvailable())
     return llvm::make_error<llvm::StringError>("ConPTY is not available",
                                                llvm::errc::io_error);
+
+  assert(m_conpty_handle == INVALID_HANDLE_VALUE &&
+         "ConPTY has already been opened");
+
   HRESULT hr;
   HANDLE hInputRead = INVALID_HANDLE_VALUE;
   HANDLE hInputWrite = INVALID_HANDLE_VALUE;
