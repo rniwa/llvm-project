@@ -809,6 +809,12 @@ Improvements to Clang's diagnostics
   both false positives but also false negatives through more precise analysis.
 
 
+- Added ``-Wmodule-map-path-outside-directory`` (off by default) to warn on
+  header and umbrella directory paths that use ``..`` to refer outside the module
+  directory in module maps found via implicit search
+  (``-fimplicit-module-maps``). This does not affect module maps specified
+  explicitly via ``-fmodule-map-file=``.
+
 Improvements to Clang's time-trace
 ----------------------------------
 

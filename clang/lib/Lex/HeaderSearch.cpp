@@ -342,7 +342,8 @@ Module *HeaderSearch::lookupModule(StringRef ModuleName, StringRef SearchName,
       if (auto FrameworkDir =
               FileMgr.getOptionalDirectoryRef(FrameworkDirName)) {
         bool IsSystem = Dir.getDirCharacteristic() != SrcMgr::C_User;
-        Module = loadFrameworkModule(ModuleName, *FrameworkDir, IsSystem);
+        Module = loadFrameworkModule(ModuleName, *FrameworkDir, IsSystem,
+                                     /*ImplicitlyDiscovered=*/true);
         if (Module)
           break;
       }
@@ -359,7 +360,7 @@ Module *HeaderSearch::lookupModule(StringRef ModuleName, StringRef SearchName,
     // checked
     DirectoryEntryRef NormalDir = *Dir.getDirRef();
     // Search for a module map file in this directory.
-    if (parseModuleMapFile(NormalDir, IsSystem,
+    if (parseModuleMapFile(NormalDir, IsSystem, /*ImplicitlyDiscovered=*/true,
                            /*IsFramework*/ false) == MMR_NewlyProcessed) {
       // We just parsed a module map file; check whether the module can be
       // loaded now.
@@ -374,6 +375,7 @@ Module *HeaderSearch::lookupModule(StringRef ModuleName, StringRef SearchName,
     NestedModuleMapDirName = Dir.getDirRef()->getName();
     llvm::sys::path::append(NestedModuleMapDirName, ModuleName);
     if (parseModuleMapFile(NestedModuleMapDirName, IsSystem,
+                           /*ImplicitlyDiscovered=*/true,
                            /*IsFramework*/ false) == MMR_NewlyProcessed) {
       // If we just parsed a module map file, look for the module again.
       Module = ModMap.findOrLoadModule(ModuleName);
@@ -1686,7 +1688,8 @@ bool HeaderSearch::hasModuleMap(StringRef FileName,
 
     // Check if it's possible that the module map for this directory can resolve
     // this header.
-    parseModuleMapFile(*Dir, IsSystem, IsFramework);
+    parseModuleMapFile(*Dir, IsSystem, /*ImplicitlyDiscovered=*/true,
+                       IsFramework);
     auto DirState = DirectoryModuleMap.find(*Dir);
     if (DirState == DirectoryModuleMap.end() || !DirState->second.ModuleMapFile)
       continue;
@@ -1873,7 +1876,8 @@ bool HeaderSearch::findUsableModuleForFrameworkHeader(
 
     // Load this framework module. If that succeeds, find the suggested module
     // for this header, if any.
-    loadFrameworkModule(ModuleName, *TopFrameworkDir, IsSystemFramework);
+    loadFrameworkModule(ModuleName, *TopFrameworkDir, IsSystemFramework,
+                        /*ImplicitlyDiscovered=*/true);
 
     // FIXME: This can find a module not part of ModuleName, which is
     // important so that we're consistent about whether this header
@@ -1910,6 +1914,7 @@ static OptionalFileEntryRef getPrivateModuleMap(FileEntryRef File,
 }
 
 bool HeaderSearch::parseAndLoadModuleMapFile(FileEntryRef File, bool IsSystem,
+                                             bool ImplicitlyDiscovered,
                                              FileID ID, unsigned *Offset,
                                              StringRef OriginalModuleMapFile) {
   // Find the directory for the module. For frameworks, that may require going
@@ -1945,7 +1950,8 @@ bool HeaderSearch::parseAndLoadModuleMapFile(FileEntryRef File, bool IsSystem,
   }
 
   assert(Dir && "module map home directory must exist");
-  switch (parseAndLoadModuleMapFileImpl(File, IsSystem, *Dir, ID, Offset,
+  switch (parseAndLoadModuleMapFileImpl(File, IsSystem, ImplicitlyDiscovered,
+                                        *Dir, ID, Offset,
                                         /*DiagnosePrivMMap=*/true)) {
   case MMR_AlreadyProcessed:
   case MMR_NewlyProcessed:
@@ -1958,8 +1964,8 @@ bool HeaderSearch::parseAndLoadModuleMapFile(FileEntryRef File, bool IsSystem,
 }
 
 HeaderSearch::ModuleMapResult HeaderSearch::parseAndLoadModuleMapFileImpl(
-    FileEntryRef File, bool IsSystem, DirectoryEntryRef Dir, FileID ID,
-    unsigned *Offset, bool DiagnosePrivMMap) {
+    FileEntryRef File, bool IsSystem, bool ImplicitlyDiscovered,
+    DirectoryEntryRef Dir, FileID ID, unsigned *Offset, bool DiagnosePrivMMap) {
   // Check whether we've already loaded this module map, and mark it as being
   // loaded in case we recursively try to load it from itself.
   auto AddResult = LoadedModuleMaps.insert(std::make_pair(File, true));
@@ -1967,7 +1973,8 @@ HeaderSearch::ModuleMapResult HeaderSearch::parseAndLoadModuleMapFileImpl(
     return AddResult.first->second ? MMR_AlreadyProcessed
                                    : MMR_InvalidModuleMap;
 
-  if (ModMap.parseAndLoadModuleMapFile(File, IsSystem, Dir, ID, Offset)) {
+  if (ModMap.parseAndLoadModuleMapFile(File, IsSystem, ImplicitlyDiscovered,
+                                       Dir, ID, Offset)) {
     LoadedModuleMaps[File] = false;
     return MMR_InvalidModuleMap;
   }
@@ -1975,7 +1982,8 @@ HeaderSearch::ModuleMapResult HeaderSearch::parseAndLoadModuleMapFileImpl(
   // Try to load a corresponding private module map.
   if (OptionalFileEntryRef PMMFile =
           getPrivateModuleMap(File, FileMgr, Diags, DiagnosePrivMMap)) {
-    if (ModMap.parseAndLoadModuleMapFile(*PMMFile, IsSystem, Dir)) {
+    if (ModMap.parseAndLoadModuleMapFile(*PMMFile, IsSystem,
+                                         ImplicitlyDiscovered, Dir)) {
       LoadedModuleMaps[File] = false;
       return MMR_InvalidModuleMap;
     }
@@ -1987,6 +1995,7 @@ HeaderSearch::ModuleMapResult HeaderSearch::parseAndLoadModuleMapFileImpl(
 
 HeaderSearch::ModuleMapResult
 HeaderSearch::parseModuleMapFileImpl(FileEntryRef File, bool IsSystem,
+                                     bool ImplicitlyDiscovered,
                                      DirectoryEntryRef Dir, FileID ID) {
   // Check whether we've already parsed this module map, and mark it as being
   // parsed in case we recursively try to parse it from itself.
@@ -1995,7 +2004,8 @@ HeaderSearch::parseModuleMapFileImpl(FileEntryRef File, bool IsSystem,
     return AddResult.first->second ? MMR_AlreadyProcessed
                                    : MMR_InvalidModuleMap;
 
-  if (ModMap.parseModuleMapFile(File, IsSystem, Dir, ID)) {
+  if (ModMap.parseModuleMapFile(File, IsSystem, ImplicitlyDiscovered, Dir,
+                                ID)) {
     ParsedModuleMaps[File] = false;
     return MMR_InvalidModuleMap;
   }
@@ -2003,7 +2013,8 @@ HeaderSearch::parseModuleMapFileImpl(FileEntryRef File, bool IsSystem,
   // Try to parse a corresponding private module map.
   if (OptionalFileEntryRef PMMFile =
           getPrivateModuleMap(File, FileMgr, Diags, /*Diagnose=*/false)) {
-    if (ModMap.parseModuleMapFile(*PMMFile, IsSystem, Dir)) {
+    if (ModMap.parseModuleMapFile(*PMMFile, IsSystem, ImplicitlyDiscovered,
+                                  Dir)) {
       ParsedModuleMaps[File] = false;
       return MMR_InvalidModuleMap;
     }
@@ -2048,9 +2059,11 @@ HeaderSearch::lookupModuleMapFile(DirectoryEntryRef Dir, bool IsFramework) {
 }
 
 Module *HeaderSearch::loadFrameworkModule(StringRef Name, DirectoryEntryRef Dir,
-                                          bool IsSystem) {
+                                          bool IsSystem,
+                                          bool ImplicitlyDiscovered) {
   // Try to load a module map file.
-  switch (parseAndLoadModuleMapFile(Dir, IsSystem, /*IsFramework*/ true)) {
+  switch (parseAndLoadModuleMapFile(Dir, IsSystem, ImplicitlyDiscovered,
+                                    /*IsFramework*/ true)) {
   case MMR_InvalidModuleMap:
     // Try to infer a module map from the framework directory.
     if (HSOpts.ImplicitModuleMaps)
@@ -2070,15 +2083,18 @@ Module *HeaderSearch::loadFrameworkModule(StringRef Name, DirectoryEntryRef Dir,
 
 HeaderSearch::ModuleMapResult
 HeaderSearch::parseAndLoadModuleMapFile(StringRef DirName, bool IsSystem,
+                                        bool ImplicitlyDiscovered,
                                         bool IsFramework) {
   if (auto Dir = FileMgr.getOptionalDirectoryRef(DirName))
-    return parseAndLoadModuleMapFile(*Dir, IsSystem, IsFramework);
+    return parseAndLoadModuleMapFile(*Dir, IsSystem, ImplicitlyDiscovered,
+                                     IsFramework);
 
   return MMR_NoDirectory;
 }
 
 HeaderSearch::ModuleMapResult
 HeaderSearch::parseAndLoadModuleMapFile(DirectoryEntryRef Dir, bool IsSystem,
+                                        bool ImplicitlyDiscovered,
                                         bool IsFramework) {
   auto InsertRes = DirectoryModuleMap.insert(std::pair{
       Dir, ModuleMapDirectoryState{{}, {}, ModuleMapDirectoryState::Invalid}});
@@ -2102,8 +2118,8 @@ HeaderSearch::parseAndLoadModuleMapFile(DirectoryEntryRef Dir, bool IsSystem,
   }
 
   if (MMState.ModuleMapFile) {
-    ModuleMapResult Result =
-        parseAndLoadModuleMapFileImpl(*MMState.ModuleMapFile, IsSystem, Dir);
+    ModuleMapResult Result = parseAndLoadModuleMapFileImpl(
+        *MMState.ModuleMapFile, IsSystem, ImplicitlyDiscovered, Dir);
     // Add Dir explicitly in case ModuleMapFile is in a subdirectory.
     // E.g. Foo.framework/Modules/module.modulemap
     //      ^Dir                  ^ModuleMapFile
@@ -2118,18 +2134,20 @@ HeaderSearch::parseAndLoadModuleMapFile(DirectoryEntryRef Dir, bool IsSystem,
 
 HeaderSearch::ModuleMapResult
 HeaderSearch::parseModuleMapFile(StringRef DirName, bool IsSystem,
-                                 bool IsFramework) {
+                                 bool ImplicitlyDiscovered, bool IsFramework) {
   if (auto Dir = FileMgr.getOptionalDirectoryRef(DirName))
-    return parseModuleMapFile(*Dir, IsSystem, IsFramework);
+    return parseModuleMapFile(*Dir, IsSystem, ImplicitlyDiscovered,
+                              IsFramework);
 
   return MMR_NoDirectory;
 }
 
 HeaderSearch::ModuleMapResult
 HeaderSearch::parseModuleMapFile(DirectoryEntryRef Dir, bool IsSystem,
-                                 bool IsFramework) {
+                                 bool ImplicitlyDiscovered, bool IsFramework) {
   if (!HSOpts.LazyLoadModuleMaps)
-    return parseAndLoadModuleMapFile(Dir, IsSystem, IsFramework);
+    return parseAndLoadModuleMapFile(Dir, IsSystem, ImplicitlyDiscovered,
+                                     IsFramework);
 
   auto InsertRes = DirectoryModuleMap.insert(std::pair{
       Dir, ModuleMapDirectoryState{{}, {}, ModuleMapDirectoryState::Invalid}});
@@ -2152,8 +2170,8 @@ HeaderSearch::parseModuleMapFile(DirectoryEntryRef Dir, bool IsSystem,
   }
 
   if (MMState.ModuleMapFile) {
-    ModuleMapResult Result =
-        parseModuleMapFileImpl(*MMState.ModuleMapFile, IsSystem, Dir);
+    ModuleMapResult Result = parseModuleMapFileImpl(
+        *MMState.ModuleMapFile, IsSystem, ImplicitlyDiscovered, Dir);
     // Add Dir explicitly in case ModuleMapFile is in a subdirectory.
     // E.g. Foo.framework/Modules/module.modulemap
     //      ^Dir                  ^ModuleMapFile
@@ -2192,7 +2210,7 @@ void HeaderSearch::collectAllModules(SmallVectorImpl<Module *> &Modules) {
 
           // Load this framework module.
           loadFrameworkModule(llvm::sys::path::stem(Dir->path()), *FrameworkDir,
-                              IsSystem);
+                              IsSystem, /*ImplicitlyDiscovered=*/true);
         }
         continue;
       }
@@ -2203,6 +2221,7 @@ void HeaderSearch::collectAllModules(SmallVectorImpl<Module *> &Modules) {
 
       // Try to load a module map file for the search directory.
       parseAndLoadModuleMapFile(*DL.getDirRef(), IsSystem,
+                                /*ImplicitlyDiscovered=*/true,
                                 /*IsFramework*/ false);
 
       // Try to load module map files for immediate subdirectories of this
@@ -2227,7 +2246,7 @@ void HeaderSearch::loadTopLevelSystemModules() {
 
     // Try to load a module map file for the search directory.
     parseAndLoadModuleMapFile(*DL.getDirRef(), DL.isSystemHeaderDirectory(),
-                              DL.isFramework());
+                              /*ImplicitlyDiscovered=*/true, DL.isFramework());
   }
 }
 
@@ -2250,9 +2269,9 @@ void HeaderSearch::loadSubdirectoryModuleMaps(DirectoryLookup &SearchDir) {
       continue;
     bool IsFramework = llvm::sys::path::extension(Dir->path()) == ".framework";
     if (IsFramework == SearchDir.isFramework())
-      parseAndLoadModuleMapFile(Dir->path(),
-                                SearchDir.isSystemHeaderDirectory(),
-                                SearchDir.isFramework());
+      parseAndLoadModuleMapFile(
+          Dir->path(), SearchDir.isSystemHeaderDirectory(),
+          /*ImplicitlyDiscovered=*/true, SearchDir.isFramework());
   }
 
   SearchDir.setSearchedAllModuleMaps(true);
