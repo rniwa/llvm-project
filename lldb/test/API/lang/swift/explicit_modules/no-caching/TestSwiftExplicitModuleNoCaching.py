@@ -7,6 +7,7 @@ class TestSwiftExplicitModuleNoCaching(TestBase):
     NO_DEBUG_INFO_TESTCASE = True
 
     @swiftTest
+    @expectedFailureWindows
     def test(self):
         """
         Test that an uncached EBM build with a CAS config works.

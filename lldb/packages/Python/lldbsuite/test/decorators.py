@@ -967,9 +967,9 @@ def swiftTest(func):
     # The OS check is static and can be evaluated at decoration time.
     # Using unittest.skip (which sets __unittest_skip__ on the method) causes
     # Python's TestCase.run() to skip setUp() before it is called.
-    if sys.platform not in ["darwin", "linux"]:
+    if sys.platform not in ["darwin", "linux", "win32"]:
         return unittest.skip(
-            "skipping Swift test because only Darwin and Linux are supported OSes"
+            "skipping Swift test because only Darwin, Linux and Windows are supported OSes"
         )(func)
 
     def is_not_swift_compatible(self):

@@ -8,7 +8,7 @@ from lldbsuite.test import lldbutil
 class TestCase(TestBase):
 
     @swiftTest
-    @expectedFailureWindows
+    @skipIfWindows # rdar://176009590
     def test_summary_contains_name(self):
         self.build()
         lldbutil.run_to_source_breakpoint(
@@ -17,7 +17,7 @@ class TestCase(TestBase):
         self.expect("v task", patterns=[r'"Chore" id:[1-9]'])
 
     @swiftTest
-    @expectedFailureWindows
+    @skipIfWindows # rdar://176009590
     @skipIfLinux  # rdar://151471067
     def test_thread_contains_name(self):
         self.build()
