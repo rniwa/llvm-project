@@ -613,6 +613,28 @@ bool ThreadList::WillResume(RunDirection &direction) {
     m_process.StopNoticingNewThreads();
   }
 
+  // Check if any threads should always be allowed to run based on their name.
+  Args always_run_names = m_process.GetAlwaysRunThreadNames();
+  auto resume_state_for_thread = [&](const ThreadSP &thread_sp) -> StateType {
+    if (always_run_names.GetArgumentCount() == 0)
+      return eStateSuspended;
+    const char *name = thread_sp->GetName();
+    if (!name)
+      return eStateSuspended;
+    llvm::StringRef name_str(name);
+    Log *log = GetLog(LLDBLog::Step);
+    for (size_t i = 0; i < always_run_names.GetArgumentCount(); ++i) {
+      if (name_str == always_run_names.GetArgumentAtIndex(i)) {
+        LLDB_LOG(log,
+                 "Thread \"{0}\" (tid={1:x}) will continue due to "
+                 "always-run-thread-names setting",
+                 name, thread_sp->GetID());
+        return eStateRunning;
+      }
+    }
+    return eStateSuspended;
+  };
+
   bool need_to_resume = true;
 
   if (thread_to_run == nullptr) {
@@ -623,7 +645,7 @@ bool ThreadList::WillResume(RunDirection &direction) {
       if (thread_sp->GetResumeState() != eStateSuspended)
         run_state = thread_sp->GetCurrentPlan()->RunState();
       else
-        run_state = eStateSuspended;
+        run_state = resume_state_for_thread(thread_sp);
       if (!thread_sp->ShouldResume(run_state))
         need_to_resume = false;
     }
@@ -648,7 +670,7 @@ bool ThreadList::WillResume(RunDirection &direction) {
         if (!thread_sp->ShouldResume(thread_sp->GetCurrentPlan()->RunState()))
           need_to_resume = false;
       } else
-        thread_sp->ShouldResume(eStateSuspended);
+        thread_sp->ShouldResume(resume_state_for_thread(thread_sp));
     }
   }
 
