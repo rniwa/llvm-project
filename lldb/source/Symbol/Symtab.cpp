@@ -36,10 +36,7 @@ using namespace lldb;
 using namespace lldb_private;
 
 Symtab::Symtab(ObjectFile *objfile)
-    : m_objfile(objfile), m_symbols(), m_file_addr_to_index(*this),
-      m_name_to_symbol_indices(), m_mutex(),
-      m_file_addr_to_index_computed(false), m_name_indexes_computed(false),
-      m_loaded_from_cache(false), m_saved_to_cache(false) {
+    : m_objfile(objfile), m_file_addr_to_index(*this) {
   m_name_to_symbol_indices.emplace(std::make_pair(
       lldb::eFunctionNameTypeNone, UniqueCStringMap<uint32_t>()));
   m_name_to_symbol_indices.emplace(std::make_pair(
@@ -712,8 +709,7 @@ uint32_t Symtab::AppendSymbolIndexesWithName(ConstString symbol_name,
   std::lock_guard<std::recursive_mutex> guard(m_mutex);
 
   if (symbol_name) {
-    if (!m_name_indexes_computed)
-      InitNameIndexes();
+    InitNameIndexes();
 
     return GetNameIndexes(symbol_name, indexes);
   }
@@ -729,8 +725,7 @@ uint32_t Symtab::AppendSymbolIndexesWithName(ConstString symbol_name,
   LLDB_SCOPED_TIMER();
   if (symbol_name) {
     const size_t old_size = indexes.size();
-    if (!m_name_indexes_computed)
-      InitNameIndexes();
+    InitNameIndexes();
 
     std::vector<uint32_t> all_name_indexes;
     const size_t name_match_count =
@@ -859,8 +854,7 @@ Symtab::FindAllSymbolsWithNameAndType(ConstString name,
 
   // Initialize all of the lookup by name indexes before converting NAME to a
   // uniqued string NAME_STR below.
-  if (!m_name_indexes_computed)
-    InitNameIndexes();
+  InitNameIndexes();
 
   if (name) {
     // The string table did have a string that matched, but we need to check
@@ -877,8 +871,7 @@ void Symtab::FindAllSymbolsWithNameAndType(
   LLDB_SCOPED_TIMER();
   // Initialize all of the lookup by name indexes before converting NAME to a
   // uniqued string NAME_STR below.
-  if (!m_name_indexes_computed)
-    InitNameIndexes();
+  InitNameIndexes();
 
   if (name) {
     // The string table did have a string that matched, but we need to check
@@ -906,8 +899,7 @@ Symbol *Symtab::FindFirstSymbolWithNameAndType(ConstString name,
                                                Visibility symbol_visibility) {
   std::lock_guard<std::recursive_mutex> guard(m_mutex);
   LLDB_SCOPED_TIMER();
-  if (!m_name_indexes_computed)
-    InitNameIndexes();
+  InitNameIndexes();
 
   if (name) {
     std::vector<uint32_t> matching_indexes;
@@ -1162,8 +1154,8 @@ void Symtab::FindFunctionSymbols(ConstString name, uint32_t name_type_mask,
     }
   }
 
-  if (!m_name_indexes_computed)
-    InitNameIndexes();
+  std::lock_guard<std::recursive_mutex> guard(m_mutex);
+  InitNameIndexes();
 
   for (lldb::FunctionNameType type :
        {lldb::eFunctionNameTypeBase, lldb::eFunctionNameTypeMethod,
@@ -1214,7 +1206,9 @@ void Symtab::SaveToCache() {
   DataFileCache *cache = Module::GetIndexCache();
   if (!cache)
     return; // Caching is not enabled.
-  InitNameIndexes(); // Init the name indexes so we can cache them as well.
+
+  // Init the name indexes so we can cache them as well.
+  InitNameIndexes();
   const auto byte_order = endian::InlHostByteOrder();
   DataEncoder file(byte_order, /*addr_size=*/8);
   // Encode will return false if the symbol table's object file doesn't have
