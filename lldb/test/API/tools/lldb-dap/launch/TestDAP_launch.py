@@ -17,7 +17,7 @@ import re
 
 @skipIf(bugnumber = "rdar://162151729")
 class TestDAP_launch(lldbdap_testcase.DAPTestCaseBase):
-    @skipIfWindows(windows_version=["<", "10.0.17763"])
+    @skipUnlessWindowsConPTY
     def test_default(self):
         """
         Tests the default launch of a simple program. No arguments,
@@ -77,7 +77,7 @@ class TestDAP_launch(lldbdap_testcase.DAPTestCaseBase):
             r"unexpected value, expected 'internalConsole\', 'integratedTerminal\' or 'externalTerminal\' at arguments.console",
         )
 
-    @skipIfWindows(windows_version=["<", "10.0.17763"])
+    @skipUnlessWindowsConPTY
     def test_termination(self):
         """
         Tests the correct termination of lldb-dap upon a 'disconnect'
@@ -212,7 +212,7 @@ class TestDAP_launch(lldbdap_testcase.DAPTestCaseBase):
         self.assertEqual(output, None, "expect no program output")
 
     @skipIfLinux  # shell argument expansion doesn't seem to work on Linux
-    @skipIfWindows(windows_version=["<", "10.0.17763"])
+    @skipUnlessWindowsConPTY
     @expectedFailureAll(oslist=["freebsd", "netbsd"], bugnumber="llvm.org/pr48349")
     def test_shellExpandArguments_enabled(self):
         """
@@ -235,7 +235,7 @@ class TestDAP_launch(lldbdap_testcase.DAPTestCaseBase):
                     quote_path, line, 'verify "%s" expanded to "%s"' % (glob, program)
                 )
 
-    @skipIfWindows(windows_version=["<", "10.0.17763"])
+    @skipUnlessWindowsConPTY
     def test_shellExpandArguments_disabled(self):
         """
         Tests the default launch of a simple program with shell expansion
@@ -257,7 +257,7 @@ class TestDAP_launch(lldbdap_testcase.DAPTestCaseBase):
                     quote_path, line, 'verify "%s" stayed to "%s"' % (glob, glob)
                 )
 
-    @skipIfWindows(windows_version=["<", "10.0.17763"])
+    @skipUnlessWindowsConPTY
     def test_args(self):
         """
         Tests launch of a simple program with arguments
@@ -282,7 +282,7 @@ class TestDAP_launch(lldbdap_testcase.DAPTestCaseBase):
                 'arg[%i] "%s" not in "%s"' % (i + 1, quoted_arg, lines[i]),
             )
 
-    @skipIfWindows(windows_version=["<", "10.0.17763"])
+    @skipUnlessWindowsConPTY
     def test_environment_with_object(self):
         """
         Tests launch of a simple program with environment variables
@@ -565,7 +565,7 @@ class TestDAP_launch(lldbdap_testcase.DAPTestCaseBase):
         )
         self.verify_commands("terminateCommands", output, terminateCommands)
 
-    @skipIfWindows(windows_version=["<", "10.0.17763"])
+    @skipUnlessWindowsConPTY
     def test_version(self):
         """
         Tests that "initialize" response contains the "version" string the same
