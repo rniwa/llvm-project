@@ -874,9 +874,33 @@ def skipIfLinux(func):
     return skipIfPlatform(["linux"])(func)
 
 
-def skipIfWindows(func):
+def skipIfWindows(func=None, windows_version=None):
     """Decorate the item to skip tests that should be skipped on Windows."""
-    return skipIfPlatform(["windows"])(func)
+
+    def decorator(func):
+        if windows_version is None:
+            return skipIfPlatform(["windows"])(func)
+        else:
+            actual_win_version = lldbplatformutil.getWindowsVersion()
+
+            def version_check():
+                if actual_win_version == "unknown":
+                    return False
+                operator, required_windows_version = windows_version
+                return lldbplatformutil.isExpectedVersion(
+                    actual_version=actual_win_version,
+                    required_version=required_windows_version,
+                    operator=operator,
+                )
+
+            return unittest.skipIf(
+                version_check(),
+                f"Test is skipped on Windows '{actual_win_version}'",
+            )(func)
+
+    if func is not None:
+        return decorator(func)
+    return decorator
 
 
 def skipIfWindowsAndNonEnglish(func):
@@ -896,6 +920,20 @@ def skipIfWindowsAndNonEnglish(func):
 def skipUnlessWindows(func):
     """Decorate the item to skip tests that should be skipped on any non-Windows platform."""
     return skipUnlessPlatform(["windows"])(func)
+
+
+def skipUnlessWindowsConPTY(func):
+    """Skip if on Windows older than 10.0.17763 (the first build to ship ConPTY)."""
+    return skipIfWindows(windows_version=["<", "10.0.17763"])(func)
+
+
+def skipUnlessWindowsConPTY2022(func):
+    """Skip on Windows older than 10.0.20348 (Server 2022).
+
+    Windows Server 2019 (10.0.17763) emits additional VT initialisation
+    sequences that LLDB does not handle.
+    """
+    return skipIfWindows(windows_version=["<", "10.0.20348"])(func)
 
 
 def skipUnlessDarwin(func):

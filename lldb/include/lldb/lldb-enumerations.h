@@ -130,6 +130,12 @@ FLAGS_ENUM(LaunchFlags){
     eLaunchFlagInheritTCCFromParent =
         (1u << 12), ///< Don't make the inferior responsible for its own TCC
                     ///< permissions but instead inherit them from its parent.
+    eLaunchFlagMemoryTagging =
+        (1u << 13), ///< Launch process with memory tagging explicitly enabled.
+    eLaunchFlagUsePipes =
+        (1u << 14), ///< Use anonymous pipes for stdio instead of a ConPTY on
+                    ///< Windows. Useful when terminal emulation is not needed
+                    ///< (e.g. lldb-dap internalConsole mode).
 };
 
 /// Thread Run Modes.
