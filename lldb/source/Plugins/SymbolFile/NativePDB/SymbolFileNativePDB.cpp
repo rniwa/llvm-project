@@ -305,7 +305,12 @@ static bool IsSwiftType(PdbTypeSymId type_id, PdbIndex& index) {
     return false;
   ClassRecord cr;
   llvm::cantFail(TypeDeserializer::deserializeAs<ClassRecord>(cvt, cr));
-  return cr.hasUniqueName() && swift::Demangle::isSwiftSymbol(cr.UniqueName);
+  if (cr.hasUniqueName())
+    return swift::Demangle::isSwiftSymbol(cr.UniqueName);
+  // https://github.com/swiftlang/swift/issues/87093
+  // FIXME: This is more of a heuristic than a definitive check, but we would need to do a
+  // second field-list walk to be sure.
+  return cr.Name.ends_with("::<unnamed-tag>");
 #else
   return false;
 #endif

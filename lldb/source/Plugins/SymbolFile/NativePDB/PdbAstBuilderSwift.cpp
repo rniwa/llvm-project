@@ -17,7 +17,9 @@
 #include "lldb/Utility/LLDBLog.h"
 #include "lldb/Utility/Log.h"
 
+#include "llvm/DebugInfo/CodeView/CVTypeVisitor.h"
 #include "llvm/DebugInfo/CodeView/TypeDeserializer.h"
+#include "llvm/DebugInfo/CodeView/TypeVisitorCallbacks.h"
 #include "llvm/DebugInfo/PDB/Native/TpiStream.h"
 #include "llvm/Support/ErrorHandling.h"
 
@@ -27,6 +29,51 @@ using namespace lldb_private;
 using namespace lldb_private::npdb;
 using namespace llvm::codeview;
 using namespace llvm::pdb;
+
+namespace {
+// To avoid issues with uniquing, bound generics are emitted as follows in DWARF:
+// - A sized outer structure with no name or identifier
+// - A sizeless inner structure with the mangled name as the name and no identifier.
+// The latter is an unnamed member of the former.
+// CodeView deviates in two major ways:
+// - Unnamed types are emitted as module name + `::<unnamed-tag>` instead of having an empty name.
+// - Unnamed forward declared members are dropped entirely. To get around this, we name
+//   the member with the mangled name of the inner type, since this is illegal in a
+//   user-written type. See https://github.com/swiftlang/swift/issues/87093
+struct BoundGenericVisitor : public TypeVisitorCallbacks {
+  TpiStream &tpi;
+  llvm::StringRef outer_prefix;
+  llvm::StringRef mangled_name;
+  bool seen = false;
+
+  BoundGenericVisitor(TpiStream &tpi, llvm::StringRef outer_prefix)
+      : tpi(tpi), outer_prefix(outer_prefix) {}
+
+  llvm::Error visitKnownMember(CVMemberRecord &,
+                               DataMemberRecord &member) override {
+    if (seen) {
+      // More than one member = doesn't match the pattern.
+      mangled_name = {};
+      return llvm::Error::success();
+    }
+    seen = true;
+    CVType inner_cvt = tpi.getType(member.Type);
+    if (!llvm::is_contained({LF_STRUCTURE, LF_CLASS}, inner_cvt.kind()))
+      return llvm::Error::success();
+    ClassRecord inner;
+    if (llvm::Error err =
+            TypeDeserializer::deserializeAs<ClassRecord>(inner_cvt, inner))
+      return err;
+    llvm::StringRef inner_mangled = inner.Name;
+    if (!inner_mangled.consume_front(outer_prefix) ||
+        inner_mangled != member.Name ||
+        !swift::Demangle::isSwiftSymbol(member.Name))
+      return llvm::Error::success();
+    mangled_name = member.Name;
+    return llvm::Error::success();
+  }
+};
+} // namespace
 
 PdbAstBuilderSwift::PdbAstBuilderSwift(TypeSystemSwiftTypeRef &swift_ts)
     : m_swift_ts(swift_ts) {}
@@ -48,9 +95,36 @@ CompilerType PdbAstBuilderSwift::CreateType(PdbTypeSymId type,
                      "Failed to deserialize ClassRecord: {0}");
       return {};
     }
-    if (!cr.hasUniqueName())
+    if (cr.hasUniqueName()) {
+      decorated = cr.UniqueName;
+    } else if (cr.Name.ends_with("::<unnamed-tag>") &&
+               !cr.FieldList.isNoneType()) {
+      // See comment at BoundGenericVisitor for details.
+      CVType field_list_cvt = tpi.getType(cr.FieldList);
+      if (field_list_cvt.kind() != LF_FIELDLIST)
+        return {};
+      FieldListRecord field_list;
+      if (auto err = TypeDeserializer::deserializeAs<FieldListRecord>(
+              field_list_cvt, field_list)) {
+        LLDB_LOG_ERROR(GetLog(LLDBLog::Symbols), std::move(err),
+                       "Failed to deserialize FieldListRecord: {0}");
+        return {};
+      }
+      // Grab the outer prefix so we can make sure member name matches the inner type name.
+      llvm::StringRef outer_prefix =
+          cr.Name.drop_back(llvm::StringRef("<unnamed-tag>").size());
+      BoundGenericVisitor visitor(tpi, outer_prefix);
+      if (auto err = visitMemberRecordStream(field_list.Data, visitor)) {
+        LLDB_LOG_ERROR(GetLog(LLDBLog::Symbols), std::move(err),
+                       "Failed to walk bound generic field list: {0}");
+        return {};
+      }
+      if (visitor.mangled_name.empty())
+        return {};
+      decorated = visitor.mangled_name;
+    } else {
       return {};
-    decorated = cr.UniqueName;
+    }
     break;
   }
   case LF_ENUM: {
