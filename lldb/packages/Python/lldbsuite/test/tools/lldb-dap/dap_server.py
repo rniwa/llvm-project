@@ -429,9 +429,13 @@ class DebugCommunication(object):
             else:
                 self.reverse_requests.append(response_or_request)
                 if response_or_request["command"] == "runInTerminal":
+                    # Per DAP spec, "env" contains additions/overrides to the
+                    # default environment, not a full replacement. Merge with
+                    # os.environ so the spawned process inherits PATH etc.
+                    env = os.environ | response_or_request["arguments"].get("env", {})
                     subprocess.Popen(
                         response_or_request["arguments"].get("args"),
-                        env=response_or_request["arguments"].get("env", {}),
+                        env=env,
                     )
                     self.send_packet(
                         {
