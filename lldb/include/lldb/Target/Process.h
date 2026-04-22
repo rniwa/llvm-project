@@ -1731,7 +1731,6 @@ public:
 
   /// Use Process::ReadMemoryRanges to efficiently read multiple unsigned
   /// integers from memory at once.
-  /// TODO: this should be upstream once there is a use for it there.
   llvm::SmallVector<std::optional<uint64_t>>
   ReadUnsignedIntegersFromMemory(llvm::ArrayRef<lldb::addr_t> addresses,
                                  unsigned byte_size);
@@ -1743,7 +1742,6 @@ public:
 
   /// Use Process::ReadMemoryRanges to efficiently read multiple pointers from
   /// memory at once.
-  /// TODO: this should be upstream once there is a use for it there.
   llvm::SmallVector<std::optional<lldb::addr_t>>
   ReadPointersFromMemory(llvm::ArrayRef<lldb::addr_t> ptr_locs);
 
