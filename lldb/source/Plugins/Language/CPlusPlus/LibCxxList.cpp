@@ -276,9 +276,9 @@ ValueObjectSP ForwardListFrontEnd::GetChildAtIndex(uint32_t idx) {
   if (error.Fail())
     return nullptr;
 
-  return CreateValueObjectFromData(llvm::formatv("[{0}]", idx).str(), data,
-                                   m_backend.GetExecutionContextRef(),
-                                   m_element_type);
+  return CreateChildValueObjectFromData(llvm::formatv("[{0}]", idx).str(), data,
+                                        m_backend.GetExecutionContextRef(),
+                                        m_element_type);
 }
 
 lldb::ChildCacheState ForwardListFrontEnd::Update() {
@@ -383,8 +383,8 @@ lldb::ValueObjectSP ListFrontEnd::GetChildAtIndex(uint32_t idx) {
     lldb::addr_t addr = current_sp->GetParent()->GetPointerValue().address;
     addr = addr + 2 * process_sp->GetAddressByteSize();
     ExecutionContext exe_ctx(process_sp);
-    current_sp =
-        CreateValueObjectFromAddress("__value_", addr, exe_ctx, m_element_type);
+    current_sp = CreateChildValueObjectFromAddress("__value_", addr, exe_ctx,
+                                                   m_element_type);
     if (!current_sp)
       return lldb::ValueObjectSP();
   }
@@ -399,9 +399,9 @@ lldb::ValueObjectSP ListFrontEnd::GetChildAtIndex(uint32_t idx) {
 
   StreamString name;
   name.Printf("[%" PRIu64 "]", (uint64_t)idx);
-  return CreateValueObjectFromData(name.GetString(), data,
-                                   m_backend.GetExecutionContextRef(),
-                                   m_element_type);
+  return CreateChildValueObjectFromData(name.GetString(), data,
+                                        m_backend.GetExecutionContextRef(),
+                                        m_element_type);
 }
 
 lldb::ChildCacheState ListFrontEnd::Update() {
@@ -421,6 +421,149 @@ lldb::ChildCacheState ListFrontEnd::Update() {
     return lldb::ChildCacheState::eRefetch;
   m_head = impl_sp->GetChildMemberWithName("__next_").get();
   m_tail = impl_sp->GetChildMemberWithName("__prev_").get();
+  return lldb::ChildCacheState::eRefetch;
+}
+
+MsvcStlForwardListFrontEnd::MsvcStlForwardListFrontEnd(ValueObject &valobj)
+    : AbstractListFrontEnd(valobj) {
+  Update();
+}
+
+llvm::Expected<uint32_t> MsvcStlForwardListFrontEnd::CalculateNumChildren() {
+  if (m_count != UINT32_MAX)
+    return m_count;
+
+  ListEntry<StlType::MsvcStl> current(m_head);
+  m_count = 0;
+  while (current && m_count < m_list_capping_size) {
+    ++m_count;
+    current = current.next();
+  }
+  return m_count;
+}
+
+ValueObjectSP MsvcStlForwardListFrontEnd::GetChildAtIndex(uint32_t idx) {
+  if (idx >= CalculateNumChildrenIgnoringErrors())
+    return nullptr;
+
+  if (!m_head)
+    return nullptr;
+
+  if (HasLoop(idx + 1))
+    return nullptr;
+
+  ValueObjectSP current_sp = GetItem(idx);
+  if (!current_sp)
+    return nullptr;
+
+  current_sp = current_sp->GetChildAtIndex(1); // get the _Myval child
+  if (!current_sp)
+    return nullptr;
+
+  // we need to copy current_sp into a new object otherwise we will end up with
+  // all items named _Myval
+  DataExtractor data;
+  Status error;
+  current_sp->GetData(data, error);
+  if (error.Fail())
+    return nullptr;
+
+  return CreateChildValueObjectFromData(llvm::formatv("[{0}]", idx).str(), data,
+                                        m_backend.GetExecutionContextRef(),
+                                        m_element_type);
+}
+
+lldb::ChildCacheState MsvcStlForwardListFrontEnd::Update() {
+  AbstractListFrontEnd::Update();
+
+  if (auto head_sp =
+          m_backend.GetChildAtNamePath({"_Mypair", "_Myval2", "_Myhead"}))
+    m_head = head_sp.get();
+
+  // With PDB, we can't get the element type from the template arguments
+  if (!m_element_type && m_head)
+    m_element_type = GetMsvcStlElementTypeFromHead(*m_head);
+
+  return ChildCacheState::eRefetch;
+}
+
+MsvcStlListFrontEnd::MsvcStlListFrontEnd(lldb::ValueObjectSP valobj_sp)
+    : AbstractListFrontEnd(*valobj_sp) {
+  if (valobj_sp)
+    Update();
+}
+
+llvm::Expected<uint32_t> MsvcStlListFrontEnd::CalculateNumChildren() {
+  if (m_count != UINT32_MAX)
+    return m_count;
+  if (!m_head || !m_tail)
+    return 0;
+
+  auto size_sp =
+      m_backend.GetChildAtNamePath({"_Mypair", "_Myval2", "_Mysize"});
+  if (!size_sp)
+    return llvm::createStringError("failed to resolve size");
+
+  m_count = size_sp->GetValueAsUnsigned(UINT32_MAX);
+  if (m_count == UINT32_MAX)
+    return llvm::createStringError("failed to read size value");
+
+  return m_count;
+}
+
+lldb::ValueObjectSP MsvcStlListFrontEnd::GetChildAtIndex(uint32_t idx) {
+  if (idx >= CalculateNumChildrenIgnoringErrors())
+    return lldb::ValueObjectSP();
+
+  if (!m_head || !m_tail)
+    return lldb::ValueObjectSP();
+
+  if (HasLoop(idx + 1))
+    return lldb::ValueObjectSP();
+
+  ValueObjectSP current_sp = GetItem(idx);
+  if (!current_sp)
+    return lldb::ValueObjectSP();
+
+  current_sp = current_sp->GetChildAtIndex(2); // get the _Myval child
+  if (!current_sp)
+    return lldb::ValueObjectSP();
+
+  // we need to copy current_sp into a new object otherwise we will end up with
+  // all items named _Myval
+  DataExtractor data;
+  Status error;
+  current_sp->GetData(data, error);
+  if (error.Fail())
+    return lldb::ValueObjectSP();
+
+  StreamString name;
+  name.Printf("[%" PRIu64 "]", (uint64_t)idx);
+  return CreateChildValueObjectFromData(name.GetString(), data,
+                                        m_backend.GetExecutionContextRef(),
+                                        m_element_type);
+}
+
+lldb::ChildCacheState MsvcStlListFrontEnd::Update() {
+  AbstractListFrontEnd::Update();
+  m_tail = nullptr;
+  m_head = nullptr;
+
+  ValueObjectSP last =
+      m_backend.GetChildAtNamePath({"_Mypair", "_Myval2", "_Myhead"});
+  if (!last)
+    return lldb::ChildCacheState::eRefetch;
+  ValueObjectSP first = last->GetChildMemberWithName("_Next");
+  if (!first)
+    return lldb::ChildCacheState::eRefetch;
+
+  m_head = first.get();
+  m_tail = last.get();
+
+  // With PDB, we can't get the element type from the template arguments
+  if (!m_element_type && m_head)
+    m_element_type = GetMsvcStlElementTypeFromHead(*m_head);
+
   return lldb::ChildCacheState::eRefetch;
 }
 

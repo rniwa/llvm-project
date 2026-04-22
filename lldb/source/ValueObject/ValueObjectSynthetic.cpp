@@ -293,6 +293,10 @@ lldb::ValueObjectSP ValueObjectSynthetic::GetChildAtIndex(uint32_t idx,
       }
       synth_guy->SetPreferredDisplayLanguageIfNeeded(
           GetPreferredDisplayLanguage());
+
+      if (lldb::ValueObjectSP check_sp =
+              CheckValueObjectOwnership(synth_guy.get()))
+        return check_sp;
       return synth_guy;
     } else {
       LLDB_LOG(log,
@@ -309,7 +313,9 @@ lldb::ValueObjectSP ValueObjectSynthetic::GetChildAtIndex(uint32_t idx,
              "[ValueObjectSynthetic::GetChildAtIndex] name={0}, child at "
              "index {1} cached as {2}",
              GetName(), idx, static_cast<void *>(valobj));
-
+    lldb::ValueObjectSP check_sp = CheckValueObjectOwnership(valobj);
+    if (check_sp)
+      return check_sp;
     return valobj->GetSP();
   }
 }
