@@ -59,6 +59,7 @@
 #include <string_view>
 
 #if LLDB_ENABLE_SWIFT
+#include "PdbAstBuilderSwift.h"
 #include "swift/Demangling/Demangle.h"
 #endif
 
@@ -307,10 +308,17 @@ static bool IsSwiftType(PdbTypeSymId type_id, PdbIndex& index) {
   llvm::cantFail(TypeDeserializer::deserializeAs<ClassRecord>(cvt, cr));
   if (cr.hasUniqueName())
     return swift::Demangle::isSwiftSymbol(cr.UniqueName);
-  // https://github.com/swiftlang/swift/issues/87093
-  // FIXME: This is more of a heuristic than a definitive check, but we would need to do a
-  // second field-list walk to be sure.
-  return cr.Name.ends_with("::<unnamed-tag>");
+  auto unwrapped = PdbAstBuilderSwift::MaybeUnwrapBoundGeneric(cr, index.tpi());
+  // Doesn't match the shape.
+  if (!unwrapped)
+    return false;
+  // Deserialization failed.
+  if (!*unwrapped) {
+    LLDB_LOG_ERROR(GetLog(LLDBLog::Symbols), unwrapped->takeError(),
+                   "Deserialization failure while checking for Swift bound generic: {0}");
+    return false;
+  }
+  return true;
 #else
   return false;
 #endif

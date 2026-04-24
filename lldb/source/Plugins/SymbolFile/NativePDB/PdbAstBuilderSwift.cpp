@@ -31,15 +31,7 @@ using namespace llvm::codeview;
 using namespace llvm::pdb;
 
 namespace {
-// To avoid issues with uniquing, bound generics are emitted as follows in DWARF:
-// - A sized outer structure with no name or identifier
-// - A sizeless inner structure with the mangled name as the name and no identifier.
-// The latter is an unnamed member of the former.
-// CodeView deviates in two major ways:
-// - Unnamed types are emitted as module name + `::<unnamed-tag>` instead of having an empty name.
-// - Unnamed forward declared members are dropped entirely. To get around this, we name
-//   the member with the mangled name of the inner type, since this is illegal in a
-//   user-written type. See https://github.com/swiftlang/swift/issues/87093
+// Fills `mangled_name` if `cr` is shaped like a bound generic.
 struct BoundGenericVisitor : public TypeVisitorCallbacks {
   TpiStream &tpi;
   llvm::StringRef outer_prefix;
@@ -75,6 +67,32 @@ struct BoundGenericVisitor : public TypeVisitorCallbacks {
 };
 } // namespace
 
+std::optional<llvm::Expected<llvm::StringRef>>
+PdbAstBuilderSwift::MaybeUnwrapBoundGeneric(const ClassRecord &cr,
+                                            TpiStream &tpi) {
+  if (!cr.Name.ends_with("::<unnamed-tag>") || cr.FieldList.isNoneType())
+    return std::nullopt;
+
+  CVType field_list_cvt = tpi.getType(cr.FieldList);
+  if (field_list_cvt.kind() != LF_FIELDLIST)
+    return std::nullopt;
+
+  FieldListRecord field_list;
+  if (llvm::Error err = TypeDeserializer::deserializeAs<FieldListRecord>(
+          field_list_cvt, field_list))
+    return std::move(err);
+
+  llvm::StringRef outer_prefix =
+      cr.Name.drop_back(llvm::StringRef("<unnamed-tag>").size());
+  BoundGenericVisitor visitor(tpi, outer_prefix);
+  if (llvm::Error err = visitMemberRecordStream(field_list.Data, visitor))
+    return std::move(err);
+
+  if (visitor.mangled_name.empty())
+    return std::nullopt;
+  return visitor.mangled_name;
+}
+
 PdbAstBuilderSwift::PdbAstBuilderSwift(TypeSystemSwiftTypeRef &swift_ts)
     : m_swift_ts(swift_ts) {}
 
@@ -97,33 +115,16 @@ CompilerType PdbAstBuilderSwift::CreateType(PdbTypeSymId type,
     }
     if (cr.hasUniqueName()) {
       decorated = cr.UniqueName;
-    } else if (cr.Name.ends_with("::<unnamed-tag>") &&
-               !cr.FieldList.isNoneType()) {
-      // See comment at BoundGenericVisitor for details.
-      CVType field_list_cvt = tpi.getType(cr.FieldList);
-      if (field_list_cvt.kind() != LF_FIELDLIST)
-        return {};
-      FieldListRecord field_list;
-      if (auto err = TypeDeserializer::deserializeAs<FieldListRecord>(
-              field_list_cvt, field_list)) {
-        LLDB_LOG_ERROR(GetLog(LLDBLog::Symbols), std::move(err),
-                       "Failed to deserialize FieldListRecord: {0}");
-        return {};
-      }
-      // Grab the outer prefix so we can make sure member name matches the inner type name.
-      llvm::StringRef outer_prefix =
-          cr.Name.drop_back(llvm::StringRef("<unnamed-tag>").size());
-      BoundGenericVisitor visitor(tpi, outer_prefix);
-      if (auto err = visitMemberRecordStream(field_list.Data, visitor)) {
-        LLDB_LOG_ERROR(GetLog(LLDBLog::Symbols), std::move(err),
-                       "Failed to walk bound generic field list: {0}");
-        return {};
-      }
-      if (visitor.mangled_name.empty())
-        return {};
-      decorated = visitor.mangled_name;
     } else {
-      return {};
+      auto unwrapped = MaybeUnwrapBoundGeneric(cr, tpi);
+      if (!unwrapped)
+        return {};
+      if (!*unwrapped) {
+        LLDB_LOG_ERROR(GetLog(LLDBLog::Symbols), unwrapped->takeError(),
+                       "Deserialization failure while checking for Swift bound generic: {0}");
+        return {};
+      }
+      decorated = **unwrapped;
     }
     break;
   }
