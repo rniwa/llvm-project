@@ -34,7 +34,7 @@ class TestDAP_restart_console(lldbdap_testcase.DAPTestCaseBase):
         self.assertEqual(seen_stopped_event, 1, "expect only one stopped entry event.")
 
     @skipIfAsan
-    @skipIfWindows
+    @expectedFailureWindows
     @skipIf(oslist=["linux"], archs=["arm$"])  # Always times out on buildbot
     def test_basic_functionality(self):
         """
@@ -83,7 +83,7 @@ class TestDAP_restart_console(lldbdap_testcase.DAPTestCaseBase):
         self.continue_to_exit()
 
     @skipIfAsan
-    @skipIfWindows
+    @expectedFailureWindows
     @skipIf(oslist=["linux"], archs=["arm$"])  # Always times out on buildbot
     def test_stopOnEntry(self):
         """
