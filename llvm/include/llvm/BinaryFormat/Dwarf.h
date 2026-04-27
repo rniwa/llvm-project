@@ -1116,6 +1116,10 @@ struct FormParams {
     return getDwarfOffsetByteSize();
   }
 
+  inline uint64_t getDwarfMaxOffset() const {
+    return (getDwarfOffsetByteSize() == 4) ? UINT32_MAX : UINT64_MAX;
+  }
+
   /// The size of a reference is determined by the DWARF 32/64-bit format.
   uint8_t getDwarfOffsetByteSize() const {
     return dwarf::getDwarfOffsetByteSize(Format);
