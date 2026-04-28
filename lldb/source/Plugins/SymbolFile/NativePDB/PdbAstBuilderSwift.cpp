@@ -31,7 +31,7 @@ using namespace llvm::codeview;
 using namespace llvm::pdb;
 
 namespace {
-// Fills `mangled_name` if `cr` is shaped like a bound generic.
+/// Fills `mangled_name` if `cr` is shaped like a bound generic.
 struct BoundGenericVisitor : public TypeVisitorCallbacks {
   TpiStream &tpi;
   llvm::StringRef outer_prefix;
@@ -67,15 +67,15 @@ struct BoundGenericVisitor : public TypeVisitorCallbacks {
 };
 } // namespace
 
-std::optional<llvm::Expected<llvm::StringRef>>
+llvm::Expected<llvm::StringRef>
 PdbAstBuilderSwift::MaybeUnwrapBoundGeneric(const ClassRecord &cr,
                                             TpiStream &tpi) {
   if (!cr.Name.ends_with("::<unnamed-tag>") || cr.FieldList.isNoneType())
-    return std::nullopt;
+    return llvm::StringRef();
 
   CVType field_list_cvt = tpi.getType(cr.FieldList);
   if (field_list_cvt.kind() != LF_FIELDLIST)
-    return std::nullopt;
+    return llvm::StringRef();
 
   FieldListRecord field_list;
   if (llvm::Error err = TypeDeserializer::deserializeAs<FieldListRecord>(
@@ -88,8 +88,6 @@ PdbAstBuilderSwift::MaybeUnwrapBoundGeneric(const ClassRecord &cr,
   if (llvm::Error err = visitMemberRecordStream(field_list.Data, visitor))
     return std::move(err);
 
-  if (visitor.mangled_name.empty())
-    return std::nullopt;
   return visitor.mangled_name;
 }
 
@@ -117,14 +115,14 @@ CompilerType PdbAstBuilderSwift::CreateType(PdbTypeSymId type,
       decorated = cr.UniqueName;
     } else {
       auto unwrapped = MaybeUnwrapBoundGeneric(cr, tpi);
-      if (!unwrapped)
-        return {};
-      if (!*unwrapped) {
-        LLDB_LOG_ERROR(GetLog(LLDBLog::Symbols), unwrapped->takeError(),
+      if (!unwrapped) {
+        LLDB_LOG_ERROR(GetLog(LLDBLog::Symbols), unwrapped.takeError(),
                        "Deserialization failure while checking for Swift bound generic: {0}");
         return {};
       }
-      decorated = **unwrapped;
+      if (unwrapped->empty())
+        return {};
+      decorated = *unwrapped;
     }
     break;
   }

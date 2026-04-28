@@ -309,16 +309,14 @@ static bool IsSwiftType(PdbTypeSymId type_id, PdbIndex& index) {
   if (cr.hasUniqueName())
     return swift::Demangle::isSwiftSymbol(cr.UniqueName);
   auto unwrapped = PdbAstBuilderSwift::MaybeUnwrapBoundGeneric(cr, index.tpi());
-  // Doesn't match the shape.
-  if (!unwrapped)
-    return false;
   // Deserialization failed.
-  if (!*unwrapped) {
-    LLDB_LOG_ERROR(GetLog(LLDBLog::Symbols), unwrapped->takeError(),
+  if (!unwrapped) {
+    LLDB_LOG_ERROR(GetLog(LLDBLog::Symbols), unwrapped.takeError(),
                    "Deserialization failure while checking for Swift bound generic: {0}");
     return false;
   }
-  return true;
+  // Doesn't match the shape.
+  return !unwrapped->empty();
 #else
   return false;
 #endif

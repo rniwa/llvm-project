@@ -37,6 +37,7 @@ func main() {
     var myPoint: Point = Point(x: 10, y: 20)
     var myDirection: Direction = .north
     var myOptional: Int32? = 7
+    var myNestedOptional: Int32?? = 8
     var myArray: [Int32] = [1, 2, 3]
     var myOptionalArray: [Int32]? = [4, 5]
     var myResult: Result<Int, Error> = .success(42)
@@ -48,7 +49,7 @@ func main() {
     let constBool: Bool = false
     let constString: String = "world"
     print(myInt32, myBool, myUInt64, myFloat, myDouble,
-          myString, myPoint, myDirection, myOptional, myArray,
+          myString, myPoint, myDirection, myOptional, myNestedOptional, myArray,
           myOptionalArray, myResult, myBox, myPair,
           constInt, constInt8, constUInt16, constBool, constString)
 }
@@ -56,7 +57,7 @@ func main() {
 main()
 
 #--- commands.input
-b main.swift:40
+b main.swift:41
 run
 frame variable
 
@@ -71,6 +72,7 @@ frame variable
 # CHECK: (main.Point) myPoint = (x = 10, y = 20)
 # CHECK: (main.Direction) myDirection = north
 # CHECK: (Int32?) myOptional = 7
+# CHECK: (Int32??) myNestedOptional = 8
 # CHECK: ([Int32]) myArray = 3 values
 # CHECK: ([Int32]?) myOptionalArray = 2 values
 # CHECK: (Result<Int, Error>) myResult = success
