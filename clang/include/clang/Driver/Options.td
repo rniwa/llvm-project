@@ -8475,6 +8475,9 @@ def fmodule_file_cache_key : MultiArg<["-"], "fmodule-file-cache-key", 2>,
            "if it were at <path>. This option may be combined with "
            "-fmodule-file= to import the module. The module must have "
            "previously been built with -fcache-compile-job.">;
+def fmodules_lazy_load_module_maps : Flag<["-"], "fmodules-lazy-load-module-maps">,
+  HelpText<"Load modules from module maps only when needed">,
+  MarshallingInfoFlag<HeaderSearchOpts<"LazyLoadModuleMaps">>;
 
 defm recovery_ast : BoolOption<"f", "recovery-ast",
   LangOpts<"RecoveryAST">, DefaultTrue,

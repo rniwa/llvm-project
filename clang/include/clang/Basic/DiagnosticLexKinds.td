@@ -848,6 +848,12 @@ def err_pp_encounter_nonreproducible: Error<
   "encountered non-reproducible token, caching failed">;
 
 // Module map parsing
+def remark_mmap_parse : Remark<
+  "parsing modulemap '%0'">, ShowInSystemHeader, InGroup<ModuleMap>;
+def remark_mmap_load : Remark<
+  "loading modulemap '%0'">, ShowInSystemHeader, InGroup<ModuleMap>;
+def remark_mmap_load_module : Remark<
+  "loading parsed module '%0'">, ShowInSystemHeader, InGroup<ModuleMap>;
 def err_mmap_unknown_token : Error<"skipping stray token">;
 def err_mmap_expected_module : Error<"expected module declaration">;
 def err_mmap_expected_module_name : Error<"expected module name">;
@@ -989,6 +995,17 @@ def warn_non_modular_include_in_module : Warning<
 def warn_module_conflict : Warning<
   "module '%0' conflicts with already-imported module '%1': %2">,
   InGroup<ModuleConflict>;
+def warn_mmap_path_outside_directory : Warning<
+  "path refers outside of the module directory; such paths in implicitly "
+  "discovered module maps are deprecated">,
+  InGroup<DiagGroup<"module-map-path-outside-directory">>, DefaultIgnore;
+def warn_mmap_deprecated_symlink_to_modular_header : Warning<
+  "header '%0' may be a symlink to '%1' owned by module '%2'; "
+  "symlinks to modular headers are deprecated, replace with a textual "
+  "forwarding header">,
+  InGroup<DiagGroup<"mmap-deprecated-symlink-to-modular-header">>,
+  DefaultIgnore;
+def note_mmap_module_defined_here : Note<"module defined here">;
 
 // C++20 modules
 def err_header_import_semi_in_macro : Error<

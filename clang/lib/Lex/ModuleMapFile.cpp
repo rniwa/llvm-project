@@ -147,7 +147,8 @@ std::string formatModuleId(const ModuleId &Id) {
 std::optional<ModuleMapFile>
 modulemap::parseModuleMap(FileID ID, clang::DirectoryEntryRef Dir,
                           SourceManager &SM, DiagnosticsEngine &Diags,
-                          bool IsSystem, unsigned *Offset) {
+                          bool IsSystem, bool ImplicitlyDiscovered,
+                          unsigned *Offset) {
   std::optional<llvm::MemoryBufferRef> Buffer = SM.getBufferOrNone(ID);
   LangOptions LOpts;
   LOpts.LangStd = clang::LangStandard::lang_c99;
@@ -167,7 +168,11 @@ modulemap::parseModuleMap(FileID ID, clang::DirectoryEntryRef Dir,
 
   if (Failed)
     return std::nullopt;
+  Parser.MMF.ID = ID;
+  Parser.MMF.Dir = Dir;
   Parser.MMF.Start = Start;
+  Parser.MMF.IsSystem = IsSystem;
+  Parser.MMF.ImplicitlyDiscovered = ImplicitlyDiscovered;
   return std::move(Parser.MMF);
 }
 

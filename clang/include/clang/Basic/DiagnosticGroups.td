@@ -664,6 +664,7 @@ def ModuleValidation : DiagGroup<"module-validation">;
 def ModuleConflict : DiagGroup<"module-conflict">;
 def ModuleFileExtension : DiagGroup<"module-file-extension">;
 def ModuleIncludeDirectiveTranslation : DiagGroup<"module-include-translation">;
+def ModuleMap : DiagGroup<"module-map">;
 def IndexStore : DiagGroup<"index-store">;
 def RoundTripCC1Args : DiagGroup<"round-trip-cc1-args">;
 def NewlineEOF : DiagGroup<"newline-eof">;

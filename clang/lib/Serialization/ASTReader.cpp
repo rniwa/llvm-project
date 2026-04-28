@@ -6350,6 +6350,14 @@ llvm::Error ASTReader::ReadSubmoduleBlock(ModuleFile &F,
       CurrentModule->ModuleMapIsPrivate = ModuleMapIsPrivate;
       CurrentModule->NamedModuleHasInit = NamedModuleHasInit;
 
+      if (!ParentModule && !F.BaseDirectory.empty()) {
+        if (auto Dir = FileMgr.getOptionalDirectoryRef(F.BaseDirectory))
+          CurrentModule->Directory = *Dir;
+      } else if (ParentModule && ParentModule->Directory) {
+        // Submodules inherit the directory from their parent.
+        CurrentModule->Directory = ParentModule->Directory;
+      }
+
       // SWIFT-SPECIFIC FIELDS HERE. Putting them last helps avoid merge
       // conflicts.
       CurrentModule->IsSwiftInferImportAsMember = IsSwiftInferImportAsMember;
@@ -6379,14 +6387,12 @@ llvm::Error ASTReader::ReadSubmoduleBlock(ModuleFile &F,
     }
 
     case SUBMODULE_UMBRELLA_HEADER: {
-      // FIXME: This doesn't work for framework modules as `Filename` is the
-      //        name as written in the module file and does not include
-      //        `Headers/`, so this path will never exist.
-      auto Filename = ResolveImportedPath(PathBuf, Blob, F);
-      if (auto Umbrella = PP.getFileManager().getOptionalFileRef(*Filename)) {
+      SmallString<128> RelativePathName;
+      if (auto Umbrella = ModMap.findUmbrellaHeaderForModule(
+              CurrentModule, Blob.str(), RelativePathName)) {
         if (!CurrentModule->getUmbrellaHeaderAsWritten()) {
-          // FIXME: NameAsWritten
-          ModMap.setUmbrellaHeaderAsWritten(CurrentModule, *Umbrella, Blob, "");
+          ModMap.setUmbrellaHeaderAsWritten(CurrentModule, *Umbrella, Blob,
+                                            RelativePathName);
         }
         // Note that it's too late at this point to return out of date if the
         // name from the PCM doesn't match up with the one in the module map,
@@ -6417,7 +6423,6 @@ llvm::Error ASTReader::ReadSubmoduleBlock(ModuleFile &F,
     }
 
     case SUBMODULE_UMBRELLA_DIR: {
-      // See comments in SUBMODULE_UMBRELLA_HEADER
       auto Dirname = ResolveImportedPath(PathBuf, Blob, F);
       if (auto Umbrella =
               PP.getFileManager().getOptionalDirectoryRef(*Dirname)) {
