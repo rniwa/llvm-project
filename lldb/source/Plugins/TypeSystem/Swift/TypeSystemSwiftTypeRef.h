@@ -422,12 +422,14 @@ public:
                    swift::Demangle::NodePointer)>
                    visitor);
 
-  /// A left-to-right preorder traversal. Don't visit children if
-  /// visitor returns false.
-  /// The NodePointer passed to \p fn is guaranteed to be non-null.
-  static void
-  PreOrderTraversal(swift::Demangle::NodePointer node,
-                    std::function<bool(swift::Demangle::NodePointer)>);
+  /// A left-to-right preorder traversal. Don't visit children if the visitor
+  /// returns false. If the visitor returns an error, the traversal stops and
+  /// the error is returned to the caller.
+  /// The NodePointer passed to \p visitor is guaranteed to be non-null.
+  static llvm::Error PreOrderTraversal(
+      swift::Demangle::NodePointer node,
+      std::function<llvm::Expected<bool>(swift::Demangle::NodePointer)>
+          visitor);
 
   /// Canonicalize Array, Dictionary and Optional to their sugared form.
   static swift::Demangle::NodePointer
