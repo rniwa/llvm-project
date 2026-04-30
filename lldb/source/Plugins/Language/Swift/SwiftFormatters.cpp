@@ -864,7 +864,7 @@ public:
     auto value = m_task_info.NAME;                                             \
     DataExtractor data{reinterpret_cast<const void *>(&value), sizeof(value),  \
                        endian::InlHostByteOrder(), sizeof(void *)};            \
-    FIELD = ValueObject::CreateValueObjectFromData(                            \
+    FIELD = CreateChildValueObjectFromData(                            \
         #NAME, data, m_backend.GetExecutionContextRef(), TYPE);                \
   }                                                                            \
   return FIELD;
@@ -880,7 +880,7 @@ public:
         DataExtractor data{reinterpret_cast<const void *>(&value),
                            sizeof(value), endian::InlHostByteOrder(),
                            sizeof(void *)};
-        m_address_sp = ValueObject::CreateValueObjectFromData(
+        m_address_sp = CreateChildValueObjectFromData(
             "address", data, m_backend.GetExecutionContextRef(),
             raw_pointer_type);
       }
@@ -916,7 +916,7 @@ public:
         DataExtractor data{reinterpret_cast<const void *>(&value),
                            sizeof(value), endian::InlHostByteOrder(),
                            sizeof(void *)};
-        m_parent_task_sp = ValueObject::CreateValueObjectFromData(
+        m_parent_task_sp = CreateChildValueObjectFromData(
             "parent", data, m_backend.GetExecutionContextRef(),
             raw_pointer_type);
       }
@@ -946,7 +946,7 @@ public:
             ts->GetTypeFromMangledTypename(ConstString(mangled_typename));
         DataExtractor data{tasks.data(), tasks.size() * sizeof(task_type),
                            endian::InlHostByteOrder(), sizeof(void *)};
-        m_child_tasks_sp = ValueObject::CreateValueObjectFromData(
+        m_child_tasks_sp = CreateChildValueObjectFromData(
             "children", data, m_backend.GetExecutionContextRef(),
             tasks_tuple_type);
       }
@@ -1106,7 +1106,7 @@ public:
   lldb::ChildCacheState Update() override {
     if (auto context_sp = m_backend.GetChildMemberWithName("context"))
       if (addr_t task_addr = context_sp->GetValueAsUnsigned(0)) {
-        m_task_sp = ValueObject::CreateValueObjectFromAddress(
+        m_task_sp = CreateChildValueObjectFromAddress(
             "task", task_addr, m_backend.GetExecutionContextRef(), m_task_type,
             false);
         if (auto synthetic_sp = m_task_sp->GetSyntheticValue())
@@ -1195,7 +1195,7 @@ public:
       if (addr_t canary_addr = canary_sp->GetValueAsUnsigned(0))
         if (addr_t task_addr = m_backend.GetProcessSP()->ReadPointerFromMemory(
                 canary_addr + canary_task_offset, status))
-          m_task_sp = ValueObject::CreateValueObjectFromAddress(
+          m_task_sp = CreateChildValueObjectFromAddress(
               "task", task_addr, m_backend.GetExecutionContextRef(),
               m_task_type, false);
 
@@ -1247,7 +1247,7 @@ public:
 
     addr_t task_addr = m_task_addrs[idx];
     auto child_name = ("[" + Twine(idx) + "]").str();
-    auto task_sp = ValueObject::CreateValueObjectFromAddress(
+    auto task_sp = CreateChildValueObjectFromAddress(
         child_name, task_addr, m_backend.GetExecutionContextRef(), m_task_type,
         false);
     if (auto synthetic_sp = task_sp->GetSyntheticValue())
@@ -1455,7 +1455,7 @@ public:
       DataExtractor data{m_job_addrs.data(),
                          m_job_addrs.size() * sizeof(addr_t),
                          endian::InlHostByteOrder(), sizeof(void *)};
-      m_unprioritised_jobs_sp = ValueObject::CreateValueObjectFromData(
+      m_unprioritised_jobs_sp = CreateChildValueObjectFromData(
           "unprioritised_jobs", data, m_backend.GetExecutionContextRef(),
           tasks_tuple_type);
     }
