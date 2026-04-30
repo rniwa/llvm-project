@@ -12,6 +12,12 @@
 #include "PdbAstBuilder.h"
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
+
+namespace llvm::codeview {
+class ClassRecord;
+}
 
 namespace llvm::pdb {
 class TpiStream;
@@ -51,6 +57,23 @@ public:
   void ParseDeclsForContext(CompilerDeclContext context) override {}
 
   void Dump(Stream &stream, llvm::StringRef filter) override;
+
+  /// To avoid issues with uniquing, bound generics are emitted as follows in DWARF:
+  /// - A sized outer structure with no name or identifier
+  /// - A sizeless inner structure with the mangled name as the name and no identifier.
+  /// The latter is an unnamed member of the former.
+  /// CodeView deviates in two major ways:
+  /// - Unnamed types are emitted as module name + `::<unnamed-tag>` instead of having an empty name.
+  /// - Unnamed forward declared members are dropped entirely. To get around this, we name
+  ///   the member with the mangled name of the inner type, since this is illegal in a
+  ///   user-written type. See https://github.com/swiftlang/swift/issues/87093
+  /// This function returns:
+  /// - an error if deserialization fails while checking.
+  /// - an empty string if `cr` is not shaped like a bound generic.
+  /// - the mangled name of the inner type if `cr` is shaped like a bound generic.
+  static llvm::Expected<llvm::StringRef>
+  MaybeUnwrapBoundGeneric(const llvm::codeview::ClassRecord &cr,
+                          llvm::pdb::TpiStream &tpi);
 
 private:
   CompilerType CreateType(PdbTypeSymId type, llvm::pdb::TpiStream &tpi);
