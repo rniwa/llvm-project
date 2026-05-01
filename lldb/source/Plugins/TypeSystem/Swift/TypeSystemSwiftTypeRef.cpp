@@ -3555,6 +3555,7 @@ bool TypeSystemSwiftTypeRef::IsFunctionType(opaque_compiler_type_t type) {
     return node && (node->getKind() == Node::Kind::FunctionType ||
                     node->getKind() == Node::Kind::ThinFunctionType ||
                     node->getKind() == Node::Kind::NoEscapeFunctionType ||
+                    node->getKind() == Node::Kind::CFunctionPointer ||
                     node->getKind() == Node::Kind::ImplFunctionType);
   };
   VALIDATE_AND_RETURN(impl, IsFunctionType, type, g_no_exe_ctx,
