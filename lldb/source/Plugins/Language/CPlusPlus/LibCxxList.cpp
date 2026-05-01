@@ -276,9 +276,9 @@ ValueObjectSP ForwardListFrontEnd::GetChildAtIndex(uint32_t idx) {
   if (error.Fail())
     return nullptr;
 
-  return CreateValueObjectFromData(llvm::formatv("[{0}]", idx).str(), data,
-                                   m_backend.GetExecutionContextRef(),
-                                   m_element_type);
+  return CreateChildValueObjectFromData(llvm::formatv("[{0}]", idx).str(), data,
+                                        m_backend.GetExecutionContextRef(),
+                                        m_element_type);
 }
 
 lldb::ChildCacheState ForwardListFrontEnd::Update() {
@@ -383,8 +383,8 @@ lldb::ValueObjectSP ListFrontEnd::GetChildAtIndex(uint32_t idx) {
     lldb::addr_t addr = current_sp->GetParent()->GetPointerValue().address;
     addr = addr + 2 * process_sp->GetAddressByteSize();
     ExecutionContext exe_ctx(process_sp);
-    current_sp =
-        CreateValueObjectFromAddress("__value_", addr, exe_ctx, m_element_type);
+    current_sp = CreateChildValueObjectFromAddress("__value_", addr, exe_ctx,
+                                                   m_element_type);
     if (!current_sp)
       return lldb::ValueObjectSP();
   }
@@ -399,9 +399,9 @@ lldb::ValueObjectSP ListFrontEnd::GetChildAtIndex(uint32_t idx) {
 
   StreamString name;
   name.Printf("[%" PRIu64 "]", (uint64_t)idx);
-  return CreateValueObjectFromData(name.GetString(), data,
-                                   m_backend.GetExecutionContextRef(),
-                                   m_element_type);
+  return CreateChildValueObjectFromData(name.GetString(), data,
+                                        m_backend.GetExecutionContextRef(),
+                                        m_element_type);
 }
 
 lldb::ChildCacheState ListFrontEnd::Update() {
