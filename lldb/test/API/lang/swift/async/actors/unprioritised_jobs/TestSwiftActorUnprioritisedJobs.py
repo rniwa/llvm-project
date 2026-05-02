@@ -7,7 +7,7 @@ from lldbsuite.test import lldbutil
 class TestCase(TestBase):
 
     @swiftTest
-    @expectedFailureWindows
+    @skipIfWindows # rdar://176009590
     def test_actor_unprioritised_jobs(self):
         """Verify that an actor exposes its unprioritised jobs (queue)."""
         self.build()
