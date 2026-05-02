@@ -23,9 +23,10 @@
 #include "lldb/lldb-private.h"
 #include "swift/Demangling/ManglingFlavor.h"
 
-#include <optional>
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Support/Casting.h"
+#include <optional>
 
 #include <mutex>
 #include <tuple>
@@ -43,6 +44,7 @@ template <unsigned PointerSize> struct RuntimeTarget;
 namespace reflection {
 template <typename T> class ReflectionContext;
 class TypeInfo;
+class BuiltinTypeInfo;
 struct FieldInfo;
 class TypeRef;
 class RecordTypeInfo;
@@ -912,11 +914,12 @@ private:
   /// Cache for the debug-info-originating type infos.
   /// \{
   llvm::DenseMap<lldb::opaque_compiler_type_t,
-                 std::optional<swift::reflection::TypeInfo>>
-      m_clang_type_info;
+                 swift::reflection::BuiltinTypeInfo>
+      m_clang_builtin_type_info;
   llvm::DenseMap<lldb::opaque_compiler_type_t,
-                 std::optional<swift::reflection::RecordTypeInfo>>
+                 swift::reflection::RecordTypeInfo>
       m_clang_record_type_info;
+  llvm::DenseSet<lldb::opaque_compiler_type_t> m_clang_type_info_negative_cache;
   llvm::DenseMap<const char *, CompilerType> m_anonymous_clang_types;
   unsigned m_num_anonymous_clang_types = 0;
   std::recursive_mutex m_clang_type_info_mutex;
