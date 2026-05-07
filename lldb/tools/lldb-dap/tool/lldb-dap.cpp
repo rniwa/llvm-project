@@ -496,6 +496,10 @@ int main(int argc, char *argv[]) {
 
 #ifdef _WIN32
   if (input_args.hasArg(OPT_check_python)) {
+#ifndef LLDB_ENABLE_PYTHON
+    llvm::errs() << "lldb-dap was not built with Python support" << '\n';
+    return EXIT_SUCCESS;
+#endif
     auto python_path_or_err = SetupPythonRuntimeLibrary();
     if (!python_path_or_err) {
       llvm::WithColor::error()
@@ -514,7 +518,8 @@ int main(int argc, char *argv[]) {
 
   auto python_path_or_err = SetupPythonRuntimeLibrary();
   if (!python_path_or_err) {
-    llvm::WithColor::error() << llvm::toString(std::move(error)) << '\n';
+    llvm::WithColor::error()
+        << llvm::toString(std::move(python_path_or_err.takeError())) << '\n';
     // BEGIN SWIFT
     llvm::WithColor::note() << g_python_installation_note;
     return 1;
