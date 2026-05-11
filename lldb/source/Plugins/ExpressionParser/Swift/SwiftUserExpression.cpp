@@ -182,20 +182,21 @@ findSwiftSelf(StackFrame &frame, lldb::VariableSP self_var_sp) {
   return info;
 }
 
-void SwiftUserExpression::ScanContext(ExecutionContext &exe_ctx, Status &err) {
+bool SwiftUserExpression::ScanContext(DiagnosticManager &diagnostic_manager,
+                                      ExecutionContext &exe_ctx) {
   Log *log = GetLog(LLDBLog::Expressions);
   LLDB_LOG(log, "SwiftUserExpression::ScanContext()");
 
   m_target = exe_ctx.GetTargetPtr();
   if (!m_target) {
     LLDB_LOG(log, "  [SUE::SC] Null target");
-    return;
+    return true;
   }
 
   StackFrame *frame = exe_ctx.GetFramePtr();
   if (!frame) {
     LLDB_LOG(log, "  [SUE::SC] Null stack frame");
-    return;
+    return true;
   }
 
   SymbolContext sym_ctx = frame->GetSymbolContext(
@@ -204,21 +205,21 @@ void SwiftUserExpression::ScanContext(ExecutionContext &exe_ctx, Status &err) {
   bool frame_is_swift = isSwiftLanguageSymbolContext(*this, sym_ctx);
   if (!frame_is_swift) {
     LLDB_LOG(log, "  [SUE::SC] Frame is not swift-y");
-    return;
+    return true;
   }
 
   if (!m_swift_ast_ctx) {
     LLDB_LOG(log, "  [SUE::SC] NULL Swift AST Context");
-    return;
+    return true;
   }
   if (!m_swift_ast_ctx->GetClangImporter()) {
     LLDB_LOG(log, "  [SUE::SC] Swift AST Context has no Clang importer");
-    return;
+    return true;
   }
 
   if (m_swift_ast_ctx->HasFatalErrors()) {
     LLDB_LOG(log, "  [SUE::SC] Swift AST Context has fatal errors");
-    return;
+    return true;
   }
 
   LLDB_LOG(log, "  [SUE::SC] Compilation unit is swift");
@@ -226,7 +227,7 @@ void SwiftUserExpression::ScanContext(ExecutionContext &exe_ctx, Status &err) {
   Block *innermost_block = sym_ctx.block;
   if (!innermost_block) {
     LLDB_LOG(log, "  [SUE::SC] No block");
-    return;
+    return true;
   }
 
   VariableList variable_list;
@@ -244,27 +245,34 @@ void SwiftUserExpression::ScanContext(ExecutionContext &exe_ctx, Status &err) {
 
   if (variable_list.Empty()) {
     LLDB_LOG(log, "  [SUE::SC] No self variable");
-    return;
+    return true;
   }
 
   assert(variable_list.GetSize() == 1 && variable_list.GetVariableAtIndex(0) &&
          "Unexpected variable list state");
 
   lldb::VariableSP self_var_sp = variable_list.GetVariableAtIndex(0);
+  auto maybe_self_info = findSwiftSelf(*frame, self_var_sp);
+  if (!maybe_self_info) {
+    LLDB_LOG(log, "  [SUE::SC] Could not determine info about 'self'");
+    return true;
+  }
+
   // If we have a self variable, but it has no location at the current PC, then
   // we can't use it.  Set the self var back to empty and we'll just pretend we
   // are in a regular frame, which is really the best we can do.
   if (!self_var_sp->LocationIsValidForFrame(frame)) {
-    LLDB_LOG(log, "  [SUE::SC] `self` variable location not valid for frame");
-    return;
+    Function *function =
+        frame->GetSymbolContext(lldb::eSymbolContextFunction).function;
+    bool optimized = function && function->GetIsOptimized();
+    diagnostic_manager.AddDiagnostic(
+        StringRef(optimized ? "no location for 'self'; possibly optimized out"
+                            : "no location for 'self' in debug info"),
+        lldb::eSeverityError, eDiagnosticOriginLLDB);
+    // This is currently unrecoverable.    
+    return false;
   }
-
-  auto maybe_self_info = findSwiftSelf(*frame, self_var_sp);
-  if (!maybe_self_info) {
-    LLDB_LOG(log, "  [SUE::SC] Could not determine info about `self`");
-    return;
-  }
-
+  
   // Check to see if we are in a class func of a class (or static func of a
   // struct) and adjust our type to point to the instance type.
   SwiftSelfInfo info = *maybe_self_info;
@@ -277,8 +285,12 @@ void SwiftUserExpression::ScanContext(ExecutionContext &exe_ctx, Status &err) {
   // Handle weak self.
 
   auto ts = info.type.GetTypeSystem().dyn_cast_or_null<TypeSystemSwift>();
-  if (!ts)
-    return;
+  if (!ts) {
+    diagnostic_manager.AddDiagnostic("'self' does not have a Swift type",
+                                     lldb::eSeverityWarning,
+                                     eDiagnosticOriginLLDB);
+    return true;
+  }    
 
   if (auto ownership_kind = ts->GetNonTriviallyManagedReferenceKind(
           info.type.GetOpaqueQualType()))
@@ -295,6 +307,7 @@ void SwiftUserExpression::ScanContext(ExecutionContext &exe_ctx, Status &err) {
 
   LLDB_LOG(log, "  [SUE::SC] Containing class name: {0}",
            info.type.GetTypeName());
+  return true;  
 }
 
 /// Create a \c VariableInfo record for \c variable if there isn't
@@ -872,12 +885,9 @@ bool SwiftUserExpression::Parse(DiagnosticManager &diagnostic_manager,
       ConstString("Swift"), swift::ImportedModule(&*module_decl_or_err));
   m_result_delegate.RegisterPersistentState(persistent_state);
   m_error_delegate.RegisterPersistentState(persistent_state);
- 
-  ScanContext(exe_ctx, err);
 
-  if (!err.Success())
-    diagnostic_manager.Printf(lldb::eSeverityWarning, "warning: %s\n",
-                              err.AsCString());
+  if (!ScanContext(diagnostic_manager, exe_ctx))
+    return false;
 
   StreamString m_transformed_stream;
 

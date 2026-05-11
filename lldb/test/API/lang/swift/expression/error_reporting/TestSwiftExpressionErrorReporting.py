@@ -14,10 +14,11 @@ class TestSwiftExpressionErrorReporting(TestBase):
         )
         process.Continue()
         self.ci.HandleCommand(
-            "settings set symbols.testing.inject-variable-location-error true", self.res
+            "settings set testing.inject-variable-location-error true", self.res
         )
         if not self.res.Succeeded():
             # This test needs assertions.
+            self.skipTest("LLDB compiled without assertions")
             return
 
         options = lldb.SBExpressionOptions()
@@ -28,10 +29,7 @@ class TestSwiftExpressionErrorReporting(TestBase):
         diags = data.GetValueForKey("errors").GetItemAtIndex(0)
         details = diags.GetValueForKey("details")
         all_messages = [str(detail.GetValueForKey("message")) for detail in details]
-        self.assertIn(
-            'Missing debug information for variable "self": variable not available',
-            all_messages,
-        )
+        self.assertIn("no location for 'self' in debug info", all_messages)
 
     @swiftTest
     def test_missing_var(self):
