@@ -10,9 +10,8 @@ class TestSwiftExpressionErrorReporting(TestBase):
     def test_missing_location(self):
         self.build()
         target, process, thread, bkpt = lldbutil.run_to_source_breakpoint(
-            self, "break here", lldb.SBFileSpec("main.swift")
+            self, "breakpoint 1", lldb.SBFileSpec("main.swift")
         )
-        process.Continue()
         self.ci.HandleCommand(
             "settings set testing.inject-variable-location-error true", self.res
         )
@@ -37,7 +36,7 @@ class TestSwiftExpressionErrorReporting(TestBase):
         only diagnostics in user code"""
         self.build()
         target, process, thread, bkpt = lldbutil.run_to_source_breakpoint(
-            self, 'break here', lldb.SBFileSpec('main.swift'))
+            self, 'breakpoint ', lldb.SBFileSpec('main.swift'))
 
         # This produces two errors:
         #   error: <EXPR>:8:1: initializers may only be declared within a type
@@ -91,7 +90,7 @@ class TestSwiftExpressionErrorReporting(TestBase):
         only diagnostics in user code"""
         self.build(dictionary={'HIDE_SWIFTMODULE': 'YES'})
         target, process, thread, bkpt = lldbutil.run_to_source_breakpoint(
-            self, 'break here', lldb.SBFileSpec('main.swift'))
+            self, 'breakpoint', lldb.SBFileSpec('main.swift'))
 
         options = lldb.SBExpressionOptions()
         value = self.frame().EvaluateExpression("strct", options)
@@ -114,3 +113,17 @@ class TestSwiftExpressionErrorReporting(TestBase):
         process.Continue()
         self.expect('expression -O -- number', error=True,
                     substrs=['self', 'not', 'found'])
+
+    @swiftTest
+    def test_syntax(self):
+        """Test syntax errors are being diagnosed"""
+        self.build()
+        target, process, thread, bkpt = lldbutil.run_to_source_breakpoint(
+            self, 'breakpoint 3', lldb.SBFileSpec('main.swift'))
+
+        options = lldb.SBExpressionOptions()
+        options.SetBooleanLanguageOption("swift-bind-generic-types", False)
+        value = self.frame().EvaluateExpression("t!", options)
+        self.assertIn(
+            "cannot force unwrap value of non-optional type 'T'",
+            str(value.GetError()))
