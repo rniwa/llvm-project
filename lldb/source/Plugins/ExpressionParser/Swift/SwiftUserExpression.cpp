@@ -312,8 +312,10 @@ bool SwiftUserExpression::ScanContext(DiagnosticManager &diagnostic_manager,
 
 /// Create a \c VariableInfo record for \c variable if there isn't
 /// already shadowing inner declaration in \c processed_variables.
+/// This function only returns an Error if `self` cannot be reconstructed.
 static llvm::Error AddVariableInfo(
-    lldb::VariableSP variable_sp, lldb::StackFrameSP &stack_frame_sp,
+    lldb::VariableSP variable_sp, DiagnosticManager &diagnostic_manager,
+    lldb::StackFrameSP &stack_frame_sp,
     SwiftASTContextForExpressions &ast_context, SwiftLanguageRuntime *runtime,
     llvm::SmallDenseSet<const char *, 8> &processed_variables,
     llvm::SmallVectorImpl<SwiftASTManipulator::VariableInfo> &local_variables,
@@ -398,19 +400,20 @@ static llvm::Error AddVariableInfo(
   // to get very far making a local out of it, so discard it here.
   Log *log = GetLog(LLDBLog::Types | LLDBLog::Expressions);
   if (could_not_resolve) {
-    if (log)
-      log->Printf("Discarding local %s because we couldn't fully realize it, "
-                  "our best attempt was: %s.",
-                  name_cstr,
-                  target_type.GetDisplayTypeName().AsCString("<unknown>"));
+    std::string msg =
+        llvm::formatv("discarded local '{0}', type '{1}' could not be realized",
+                      name, target_type.GetDisplayTypeName());
+    diagnostic_manager.AddDiagnostic(msg, lldb::eSeverityWarning,
+                                     eDiagnosticOriginLLDB);
+
     // Not realizing self is a fatal error for an expression and the
     // Swift compiler error alone is not particularly useful.
     if (is_self)
       return llvm::createStringError(
           llvm::inconvertibleErrorCode(),
-          "Discarding local %s because we couldn't fully realize it, "
+          "Discarding self because we couldn't fully realize it, "
           "our best attempt was: %s.",
-          name_cstr, target_type.GetDisplayTypeName().AsCString("<unknown>"));
+          target_type.GetDisplayTypeName().AsCString("<unknown>"));
     return llvm::Error::success();
   }
 
@@ -517,7 +520,8 @@ static void CollectVariablesInScope(SymbolContext &sc,
 
 /// Create a \c VariableInfo record for each visible variable.
 static llvm::Error RegisterAllVariables(
-    SymbolContext &sc, lldb::StackFrameSP &stack_frame_sp,
+    DiagnosticManager &diagnostic_manager, SymbolContext &sc,
+    lldb::StackFrameSP &stack_frame_sp,
     SwiftASTContextForExpressions &ast_context,
     llvm::SmallVectorImpl<SwiftASTManipulator::VariableInfo> &local_variables,
     lldb::DynamicValueType use_dynamic,
@@ -535,10 +539,10 @@ static llvm::Error RegisterAllVariables(
   // not already shadowed by an inner declaration.
   llvm::SmallDenseSet<const char *, 8> processed_names;
   for (size_t vi = 0, ve = variables.GetSize(); vi != ve; ++vi)
-    if (auto error =
-            AddVariableInfo({variables.GetVariableAtIndex(vi)}, stack_frame_sp,
-                            ast_context, language_runtime, processed_names,
-                            local_variables, use_dynamic, bind_generic_types))
+    if (auto error = AddVariableInfo(
+            {variables.GetVariableAtIndex(vi)}, diagnostic_manager,
+            stack_frame_sp, ast_context, language_runtime, processed_names,
+            local_variables, use_dynamic, bind_generic_types))
       return error;
   return llvm::Error::success();
 }
@@ -656,8 +660,9 @@ SwiftUserExpression::GetTextAndSetExpressionParser(
 
   if (!m_options.GetUseContextFreeSwiftPrintObject()) {
     if (llvm::Error error = RegisterAllVariables(
-            sc, stack_frame, *m_swift_ast_ctx, local_variables,
-            m_options.GetUseDynamic(), m_options.GetSwiftBindGenericTypes())) {
+            diagnostic_manager, sc, stack_frame, *m_swift_ast_ctx,
+            local_variables, m_options.GetUseDynamic(),
+            m_options.GetSwiftBindGenericTypes())) {
       diagnostic_manager.PutString(lldb::eSeverityInfo,
                                    llvm::toString(std::move(error)));
       diagnostic_manager.PutString(
