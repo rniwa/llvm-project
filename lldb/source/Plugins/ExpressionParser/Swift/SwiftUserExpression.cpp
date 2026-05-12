@@ -655,7 +655,7 @@ SwiftUserExpression::GetTextAndSetExpressionParser(
   if (!m_options.GetUseContextFreeSwiftPrintObject()) {
     if (llvm::Error error = RegisterAllVariables(
             sc, stack_frame, *m_swift_ast_ctx, local_variables,
-            m_options.GetUseDynamic(), m_options.GetBindGenericTypes())) {
+            m_options.GetUseDynamic(), m_options.GetSwiftBindGenericTypes())) {
       diagnostic_manager.PutString(lldb::eSeverityInfo,
                                    llvm::toString(std::move(error)));
       diagnostic_manager.PutString(
@@ -676,7 +676,7 @@ SwiftUserExpression::GetTextAndSetExpressionParser(
     }
 
     if (!SwiftASTManipulator::ShouldBindGenericTypes(
-            m_options.GetBindGenericTypes()) &&
+            m_options.GetSwiftBindGenericTypes()) &&
         !CanEvaluateExpressionWithoutBindingGenericParams(
             local_variables, m_generic_signature, *m_swift_ast_ctx, sc.block,
             *stack_frame.get())) {
@@ -924,7 +924,7 @@ bool SwiftUserExpression::Parse(DiagnosticManager &diagnostic_manager,
                SwiftExpressionParser::ParseResult::retry_bind_generic_params &&
            parse_result != SwiftExpressionParser::ParseResult::
                                retry_bind_generic_params_not_supported) ||
-          m_options.GetBindGenericTypes() != lldb::eBindAuto)
+          m_options.GetSwiftBindGenericTypes() != lldb::eBindAuto)
         // If we're not retrying, just copy the diagnostics over.
         diagnostic_manager.Consume(std::move(first_try_diagnostic_manager));
     } else {
@@ -958,11 +958,12 @@ bool SwiftUserExpression::Parse(DiagnosticManager &diagnostic_manager,
     case ParseResult::retry_bind_generic_params:
       // Retry running the expression without binding the generic types if
       // BindGenericTypes was in the auto setting, give up otherwise.
-      if (m_options.GetBindGenericTypes() != lldb::eBindAuto) 
+      if (m_options.GetSwiftBindGenericTypes() != lldb::eBindAuto)
         return false;
       // Retry binding generic parameters, this is the only
       // case that will loop.
-      m_options.SetBindGenericTypes(lldb::eBind);
+      llvm::cantFail(
+          m_options.SetBooleanLanguageOption("swift-bind-generic-types", true));
       retry = true;
       break;
     
