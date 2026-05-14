@@ -262,7 +262,7 @@ std::string TypeSystemSwiftTypeRef::AdjustTypeForOriginallyDefinedInModule(
   llvm::DenseMap<NodePointer, NodePointer> type_to_renamed_type_nodes;
 
   // Visit the demangle tree and populate type_to_renamed_type_nodes.
-  PreOrderTraversal(type_node, [&](NodePointer node) {
+  llvm::cantFail(PreOrderTraversal(type_node, [&](NodePointer node) {
     // We're visiting the entire tree, but we only need to examine "Type" nodes.
     if (node->getKind() != Node::Kind::Type)
       return true;
@@ -321,7 +321,7 @@ std::string TypeSystemSwiftTypeRef::AdjustTypeForOriginallyDefinedInModule(
 
     type_to_renamed_type_nodes[node_with_module_and_name] = new_node;
     return true;
-  });
+  }));
 
   // If there are no renamed modules, there's nothing to do.
   if (type_to_renamed_type_nodes.empty())
@@ -1301,7 +1301,7 @@ TypeSystemSwiftTypeRef::MapOutOfContext(lldb::opaque_compiler_type_t type) {
   unsigned depth = 0;
   using ParamVector = llvm::SmallVector<std::pair<unsigned, unsigned>, 4>;
   llvm::SmallDenseMap<NodePointer, ParamVector, 8> subs;
-  PreOrderTraversal(type_node, [&](NodePointer node) {
+  llvm::cantFail(PreOrderTraversal(type_node, [&](NodePointer node) {
     switch (node->getKind()) {
     case Node::Kind::BoundGenericClass:
     case Node::Kind::BoundGenericEnum:
@@ -1338,7 +1338,7 @@ TypeSystemSwiftTypeRef::MapOutOfContext(lldb::opaque_compiler_type_t type) {
     default:
       return true;
     }
-  });
+  }));
   if (error)
     return {};
 
@@ -1523,16 +1523,21 @@ TypeSystemSwiftTypeRef::TryTransform(
   return fn(node);
 }
 
-void TypeSystemSwiftTypeRef::PreOrderTraversal(
+llvm::Error TypeSystemSwiftTypeRef::PreOrderTraversal(
     swift::Demangle::NodePointer node,
-    std::function<bool(swift::Demangle::NodePointer)> visitor) {
+    std::function<llvm::Expected<bool>(swift::Demangle::NodePointer)> visitor) {
   if (!node)
-    return;
-  if (!visitor(node))
-    return;
+    return llvm::Error::success();
+  auto descend = visitor(node);
+  if (!descend)
+    return descend.takeError();
+  if (!*descend)
+    return llvm::Error::success();
 
-  for (swift::Demangle::NodePointer child : *node) 
-    PreOrderTraversal(child, visitor);
+  for (swift::Demangle::NodePointer child : *node)
+    if (auto err = PreOrderTraversal(child, visitor))
+      return err;
+  return llvm::Error::success();
 }
 
 /// Desugar a sugared type.
@@ -2780,31 +2785,39 @@ TypeSystemSwiftTypeRef::RemoveMarkerProtocols(
     swift::Demangle::Demangler &dem, swift::Demangle::NodePointer node,
     swift::Mangle::ManglingFlavor flavor) {
   using namespace swift::Demangle;
-  NodePointer type_list_node = swift_demangle::NodeAtPath(
-      node, {Node::Kind::Global, Node::Kind::TypeMangling, Node::Kind::Type,
-             Node::Kind::ProtocolList, Node::Kind::TypeList});
-  if (!type_list_node)
+  if (!node)
     return node;
 
-  // Collect indices of marker protocols, then remove in reverse order so
-  // that earlier indices remain valid.
+  // Strip marker protocols from every ProtocolList > TypeList in the tree.
   swift_demangle::NodeBuilder b(dem);
-  llvm::SmallVector<size_t> to_remove;
-  for (size_t i = 0; i < type_list_node->getNumChildren(); ++i) {
-    // Mangle a single-protocol type for this child so we can look it up in the
-    // type cache.
-    auto *protocol_list =
-        b.Node(Node::Kind::ProtocolList,
-               b.Node(Node::Kind::TypeList, type_list_node->getChild(i)));
-    auto mangling = mangleNode(b.GlobalType(protocol_list), flavor);
-    if (!mangling.isSuccess())
-      return llvm::createStringError("failed to mangle protocol in type: " +
-                                     nodeToString(node));
-    if (IsMarkerProtocol(ConstString(mangling.result())))
-      to_remove.push_back(i);
-  }
-  for (size_t i : llvm::reverse(to_remove))
-    type_list_node->removeChildAt(i);
+  if (auto err = PreOrderTraversal(
+          node, [&](NodePointer current) -> llvm::Expected<bool> {
+            if (current->getKind() != Node::Kind::ProtocolList ||
+                current->getNumChildren() != 1 ||
+                current->getFirstChild()->getKind() != Node::Kind::TypeList)
+              return true;
+
+            NodePointer type_list_node = current->getFirstChild();
+            llvm::SmallVector<size_t> to_remove;
+            for (size_t i = 0; i < type_list_node->getNumChildren(); ++i) {
+              // Mangle a single-protocol type for this child so we can look it
+              // up in the type cache.
+              auto *protocol_list = b.Node(
+                  Node::Kind::ProtocolList,
+                  b.Node(Node::Kind::TypeList, type_list_node->getChild(i)));
+              auto mangling = mangleNode(b.GlobalType(protocol_list), flavor);
+              if (!mangling.isSuccess())
+                return llvm::createStringError(
+                    "failed to mangle protocol in type: " +
+                    nodeToString(current));
+              if (IsMarkerProtocol(ConstString(mangling.result())))
+                to_remove.push_back(i);
+            }
+            for (size_t i : llvm::reverse(to_remove))
+              type_list_node->removeChildAt(i);
+            return true;
+          }))
+    return std::move(err);
   return node;
 }
 
@@ -3542,6 +3555,7 @@ bool TypeSystemSwiftTypeRef::IsFunctionType(opaque_compiler_type_t type) {
     return node && (node->getKind() == Node::Kind::FunctionType ||
                     node->getKind() == Node::Kind::ThinFunctionType ||
                     node->getKind() == Node::Kind::NoEscapeFunctionType ||
+                    node->getKind() == Node::Kind::CFunctionPointer ||
                     node->getKind() == Node::Kind::ImplFunctionType);
   };
   VALIDATE_AND_RETURN(impl, IsFunctionType, type, g_no_exe_ctx,
