@@ -76,6 +76,24 @@ public:
         return DynamicRecursiveASTVisitor::TraverseDecl(D);
       }
 
+      bool TraverseLambdaExpr(LambdaExpr *L) override {
+        if (!DynamicRecursiveASTVisitor::TraverseLambdaExpr(L))
+          return false;
+        // The body of a generic lambda is a template pattern in which calls
+        // may not have been resolved yet, so traverse the instantiations of
+        // its call operator as well. Only the body is traversed so that the
+        // report keeps pointing at the function enclosing the lambda.
+        if (auto *FTD = L->getLambdaClass()->getDependentLambdaCallOperator()) {
+          for (auto *Spec : FTD->specializations()) {
+            if (auto *Body = Spec->getBody()) {
+              if (!TraverseStmt(Body))
+                return false;
+            }
+          }
+        }
+        return true;
+      }
+
       bool VisitCallExpr(CallExpr *CE) override {
         Checker->visitCallExpr(CE, DeclWithIssue);
         return true;
@@ -246,6 +264,12 @@ public:
   }
 
   bool isPtrOriginSafe(const Expr *Arg) const {
+    // In an uninstantiated template such as the body of a generic lambda, the
+    // origin of a type-dependent expression isn't known yet; e.g. the callee
+    // of a call may still be an unresolved overload set. Wait for the
+    // instantiation, which is checked separately, to determine its safety.
+    if (Arg->isTypeDependent())
+      return true;
     return tryToFindPtrOrigin(
         Arg, /*StopAtFirstRefCountedObj=*/true,
         [&](const clang::CXXRecordDecl *Record) {
